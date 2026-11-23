@@ -707,7 +707,47 @@
     var editor = mgr ? '<section class="card span-all"><div class="card-head"><h2>Edit registered info</h2><span class="hint">School Admins can edit this too</span></div>' + regForm(s.name, res.registered, true) + '</section>' +
       '<section class="card span-all" style="gap:6px"><div class="card-head" style="margin-bottom:8px"><h2>Change history</h2><span class="hint">Every save is kept</span></div><div id="history">' + historyList(res.history) + '</div></section>' : '';
 
-    body.innerHTML = '<div class="grid">' + (s.health ? health : '') + contract + stock + logs + people + activity + reg + editor + '</div>';
+    var contractsCard = mgr ? contractRecords(s.name, res) : '';
+    body.innerHTML = '<div class="grid">' + (s.health ? health : '') + contract + stock + contractsCard + logs + people + activity + reg + editor + '</div>';
+  }
+
+  function contractRecords(schoolName, res) {
+    var docs = res.docs || [];
+    var rows = res.contracts || [];
+    var hist = res.contractHistory || [];
+    var docHtml = docs.length ? docs.map(function (d) {
+      var u = safeUrl(d.url);
+      return '<a class="rowlink" href="' + esc(u) + '" target="_blank" rel="noopener"><span class="tag">' + icon('file', 18) + '</span>' +
+        '<span class="t"><b style="font-size:14px">' + esc(d.title) + '</b><span>' + esc(d.kind) + ' · ' + esc(d.type) + (d.signed ? ' · Signed' : '') + '</span></span>' + icon('ext', 16) + '</a>';
+    }).join('') : '<div class="empty">No contract PDFs linked yet.</div>';
+
+    var rowHtml = rows.length ? rows.map(function (c) {
+      return '<div style="border-top:1px solid var(--border);padding:12px 0;display:flex;flex-direction:column;gap:8px">' +
+        '<div class="card-head"><span style="display:flex;flex-direction:column;gap:3px"><b style="font-size:14px">' + esc(fmtDate(c.start, { month: 'short', year: 'numeric' })) + ' to ' + esc(fmtDate(c.end, { month: 'short', year: 'numeric' })) + '</b>' +
+        '<span class="small muted">' + esc(c.type || 'Contract') + (c.note ? ' · ' + esc(c.note) : '') + '</span></span>' +
+        '<span class="badge ' + (CONTRACT_CLASS[c.status] || 'b-mute') + '">' + esc(c.status) + '</span></div>' +
+        '<details><summary class="small" style="cursor:pointer;color:var(--link);font-weight:600">Edit this contract</summary>' +
+        '<form class="form contract-edit" data-row="' + c.row + '" data-school="' + esc(schoolName) + '" style="margin-top:12px" novalidate><div class="fields">' +
+        '<div class="field"><label for="ce-s-' + c.row + '">Start date</label><input id="ce-s-' + c.row + '" name="start" type="date" value="' + esc(c.start) + '" required></div>' +
+        '<div class="field"><label for="ce-e-' + c.row + '">End date</label><input id="ce-e-' + c.row + '" name="end" type="date" value="' + esc(c.end) + '" required></div>' +
+        '<div class="field"><label for="ce-t-' + c.row + '">Type</label><select id="ce-t-' + c.row + '" name="type"><option' + (c.type !== 'Lease' ? ' selected' : '') + '>Rental</option><option' + (c.type === 'Lease' ? ' selected' : '') + '>Lease</option></select></div>' +
+        '<div class="field"><label for="ce-p-' + c.row + '">PDF link</label><input id="ce-p-' + c.row + '" name="pdf" type="url" value="' + esc(c.pdf) + '" placeholder="https://"></div>' +
+        '<div class="field full"><label for="ce-n-' + c.row + '">Note</label><input id="ce-n-' + c.row + '" name="note" type="text" maxlength="300" value="' + esc(c.note) + '"></div>' +
+        '</div><div class="row" style="justify-content:flex-end"><button type="submit" class="btn primary sm">Save contract</button></div></form></details></div>';
+    }).join('') : '<div class="empty">No contract periods on file.</div>';
+
+    var histHtml = hist.length ? hist.map(function (h) {
+      return '<div class="hist"><span class="dot" aria-hidden="true"></span><div class="t"><b>' + esc(h.field) + ' changed</b>' +
+        '<span>' + (h.oldValue ? '<s>' + esc(h.oldValue) + '</s> to ' : '') + esc(h.newValue || '(blank)') + '</span>' +
+        '<span>' + esc(h.by) + ' · ' + esc(relTime(h.at)) + '</span></div></div>';
+    }).join('') : '<div class="empty">No contract changes yet. Edits and new contracts are recorded here.</div>';
+
+    return '<section class="card span-all" aria-labelledby="cr-h"><div class="card-head"><h2 id="cr-h">Contract records</h2><span class="hint">Managers only</span></div>' +
+      '<div class="grid" style="gap:28px">' +
+      '<div style="display:flex;flex-direction:column;gap:4px;min-width:0"><span class="legend-title" style="margin-bottom:6px">Signed documents · ' + docs.length + '</span>' + docHtml + '</div>' +
+      '<div style="display:flex;flex-direction:column;min-width:0"><span class="legend-title" style="margin-bottom:6px">Contract periods</span>' + rowHtml + '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:4px;min-width:0"><span class="legend-title" style="margin-bottom:6px">Change history</span>' + histHtml + '</div>' +
+      '</div></section>';
   }
 
   function biggestLift(h) {
@@ -1062,6 +1102,22 @@
         toast(res.changed ? 'Saved. College Products has been notified.' : 'No changes to save.');
       }).catch(function (err) {
         btn.disabled = false; btn.textContent = 'Save changes';
+        if (err.code !== 'auth_expired') toast(err.message, true);
+      });
+    } else if (form.classList.contains('contract-edit')) {
+      e.preventDefault();
+      var payload = { row: Number(form.getAttribute('data-row')), school: form.getAttribute('data-school'), start: form.elements.start.value, end: form.elements.end.value, type: form.elements.type.value, pdf: form.elements.pdf.value.trim(), note: form.elements.note.value.trim() };
+      if (!payload.start || !payload.end) { toast('Start and end dates are required.', true); return; }
+      if (payload.end < payload.start) { toast('The end date must be after the start date.', true); return; }
+      var sb = form.querySelector('[type="submit"]');
+      sb.disabled = true; sb.textContent = 'Saving...';
+      api('updateContract', payload).then(function (res) {
+        state.data = res.boot;
+        state.schoolCache[payload.school] = res.school;
+        toast(res.changed ? 'Contract saved. The change is in the history.' : 'No changes to save.');
+        renderRoute();
+      }).catch(function (err) {
+        sb.disabled = false; sb.textContent = 'Save contract';
         if (err.code !== 'auth_expired') toast(err.message, true);
       });
     } else if (form.id === 'contract-form') {
