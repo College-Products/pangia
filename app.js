@@ -1,0 +1,1111 @@
+/* Pangia | College Products */
+(function () {
+  'use strict';
+
+  var CFG = window.PANGIA_CONFIG || {};
+  var state = {
+    token: null,
+    data: null,
+    schoolCache: {},
+    filter: 'all',
+    search: '',
+    logSearch: '',
+    palette: { open: false, query: '', index: 0, items: [] }
+  };
+
+  /* ---------------------------------------------------------------- */
+  /* Utilities                                                        */
+  /* ---------------------------------------------------------------- */
+
+  function $(sel, root) { return (root || document).querySelector(sel); }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function safeUrl(u) { return /^https:\/\//i.test(String(u || '')) ? String(u) : ''; }
+  function fmtNum(n) { return n == null ? '' : Number(n).toLocaleString('en-US'); }
+  function toDate(iso) {
+    if (!iso) return null;
+    var d = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? new Date(iso + 'T00:00:00') : new Date(iso);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  function fmtDate(iso, opts) {
+    var d = toDate(iso);
+    return d ? d.toLocaleDateString('en-US', opts || { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+  }
+  function relTime(iso) {
+    var d = toDate(iso);
+    if (!d) return '';
+    var s = Math.round((Date.now() - d.getTime()) / 1000);
+    if (s < 60) return 'just now';
+    if (s < 3600) return Math.round(s / 60) + ' min ago';
+    if (s < 86400) { var h = Math.round(s / 3600); return h + (h === 1 ? ' hour ago' : ' hours ago'); }
+    if (s < 172800) return 'Yesterday';
+    if (s < 604800) return Math.round(s / 86400) + ' days ago';
+    return fmtDate(iso, { month: 'short', day: 'numeric' });
+  }
+  function initials(name) {
+    var words = String(name || '').replace(/[^A-Za-z0-9 ]/g, ' ').split(/\s+/).filter(function (w) {
+      return w && /^[A-Z0-9]/.test(w) && ['University', 'College', 'Of', 'The', 'And'].indexOf(w) === -1;
+    });
+    if (!words.length) words = String(name || '?').split(/\s+/);
+    return words.slice(0, 2).map(function (w) { return w[0]; }).join('').toUpperCase();
+  }
+  function firstName(name) { return String(name || '').split(/[\s@]/)[0]; }
+  function schoolHref(name) { return '#/school/' + encodeURIComponent(name); }
+  function role() { return state.data ? state.data.user.role : ''; }
+  function isManager() { return role() === 'Manager'; }
+
+  /* ---------------------------------------------------------------- */
+  /* Icons                                                            */
+  /* ---------------------------------------------------------------- */
+
+  var PATHS = {
+    home: 'M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1v-9z',
+    school: 'M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16M15 9h4a1 1 0 0 1 1 1v11M3 21h18M8 8h3M8 12h3M8 16h3',
+    layers: 'M12 3l9 5-9 5-9-5 9-5zM3 13l9 5 9-5M3 17.5l9 5 9-5',
+    file: 'M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8l-5-5zM14 3v5h5M9 13h6M9 17h6',
+    cm: 'M9 3h6v3H9zM7 4.5H5V21h14V4.5h-2M8 11h8M8 15h5',
+    delivery: 'M2 6h12v10H2zM14 10h4l3 3v3h-7M6.5 19.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM17.5 19.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4z',
+    collection: 'M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5',
+    search: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM21 21l-4.3-4.3',
+    sun: 'M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4',
+    moon: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z',
+    refresh: 'M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5',
+    logout: 'M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3',
+    chev: 'M9 6l6 6-6 6',
+    ext: 'M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5',
+    link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
+    check: 'M5 12l5 5L20 7',
+    alert: 'M12 3l10 18H2L12 3zM12 10v4M12 17.5v.5',
+    spark: 'M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1',
+    lock: 'M6 10h12v11H6zM8 10V7a4 4 0 0 1 8 0v3',
+    plus: 'M12 5v14M5 12h14',
+    user: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+    pencil: 'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z'
+  };
+  function icon(name, size, stroke) {
+    return '<svg class="i" width="' + (size || 18) + '" height="' + (size || 18) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + (stroke || 1.8) + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + PATHS[name] + '"></path></svg>';
+  }
+  function logo(size, light) {
+    var s = size || 34;
+    return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="10" fill="' + (light ? '#FFFFFF' : '#054D80') + '"></rect><circle cx="17" cy="17" r="9" fill="none" stroke="' + (light ? '#054D80' : '#FFFFFF') + '" stroke-width="2.2"></circle><path d="M10 14.5c2.6 1.4 4.8.3 7-1.5 2.2 1.8 4.4 2.9 7 1.5M11 21c2-1 4-.6 6 .6" fill="none" stroke="#80BC41" stroke-width="2.2" stroke-linecap="round"></path></svg>';
+  }
+  function ring(score, size) {
+    var sz = size || 44;
+    var has = typeof score === 'number';
+    var col = !has ? 'var(--track)' : score >= 80 ? 'var(--ring-good)' : score >= 50 ? 'var(--ring-warn)' : 'var(--ring-bad)';
+    var dash = has ? (score / 100 * 100.5).toFixed(1) : 0;
+    var fs = Math.round(sz * 0.29);
+    return '<div class="ring" style="width:' + sz + 'px;height:' + sz + 'px" role="img" aria-label="Health score ' + (has ? score : 'unknown') + ' of 100">' +
+      '<svg width="' + sz + '" height="' + sz + '" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="16" fill="none" stroke="var(--track)" stroke-width="4"></circle>' +
+      '<circle cx="20" cy="20" r="16" fill="none" stroke="' + col + '" stroke-width="4" stroke-linecap="round" stroke-dasharray="' + dash + ' 101" transform="rotate(-90 20 20)"></circle></svg>' +
+      '<span style="font-size:' + fs + 'px">' + (has ? score : '-') + '</span></div>';
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Status helpers                                                   */
+  /* ---------------------------------------------------------------- */
+
+  var STOCK_CLASS = { Healthy: 'b-good', Low: 'b-warn', Critical: 'b-bad', Check: 'b-mute' };
+  var STOCK_BAR = { Healthy: 'var(--ring-good)', Low: 'var(--ring-warn)', Critical: 'var(--ring-bad)', Check: 'var(--border-strong)' };
+  var CONTRACT_CLASS = { 'Active': 'b-good', 'Renewing soon': 'b-warn', 'Pending': 'b-info', 'Expired': 'b-mute' };
+
+  function contractBadge(c) {
+    if (!c) return '<span class="badge b-mute">No contract on file</span>';
+    var label = c.status === 'Renewing soon' ? 'Renews in ' + c.daysLeft + ' days' : c.status;
+    return '<span class="badge ' + (CONTRACT_CLASS[c.status] || 'b-mute') + '">' + esc(label) + '</span>';
+  }
+  function contractNote(c) {
+    if (!c) return '';
+    if (c.status === 'Expired') return 'Ended ' + fmtDate(c.end, { month: 'short', year: 'numeric' });
+    if (c.status === 'Pending') return 'Starts ' + fmtDate(c.start, { month: 'short', year: 'numeric' });
+    return 'Ends ' + fmtDate(c.end, { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  function coverage(inStock, ordered) {
+    if (inStock == null) return 0;
+    if (!ordered) return 1;
+    return Math.max(0, Math.min(inStock / ordered, 1));
+  }
+  function covBar(inStock, ordered, status, big) {
+    var r = coverage(inStock, ordered);
+    var w = r > 0 ? Math.max(r * 100, 3) : 0;
+    return '<div class="track' + (big ? ' lg' : '') + '" aria-hidden="true"><div style="width:' + w.toFixed(0) + '%;background:' + (STOCK_BAR[status] || STOCK_BAR.Check) + '"></div></div>';
+  }
+  function reasonFor(s) {
+    var bits = [];
+    if (s.ordered != null && (s.stockStatus === 'Critical' || s.stockStatus === 'Low')) bits.push(fmtNum(s.inStock) + ' of ' + fmtNum(s.ordered) + ' ordered in stock');
+    if (s.stockStatus === 'Check') bits.push('Stock count needs a check');
+    if (s.contract && s.contract.status === 'Renewing soon') bits.push('Renewal in ' + s.contract.daysLeft + ' days');
+    if (s.contract && s.contract.status === 'Expired') bits.push('Contract expired');
+    if (!s.contract) bits.push('No contract on file');
+    if (s.openTasks) bits.push(s.openTasks + ' open CM task' + (s.openTasks === 1 ? '' : 's'));
+    return bits.slice(0, 2).join('. ') + (bits.length ? '.' : 'Looking good.');
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Season mode                                                      */
+  /* ---------------------------------------------------------------- */
+
+  function season(d) {
+    var m = d.getMonth();
+    if (m === 7) return { label: 'Delivery season', title: 'Move-in deliveries are underway', body: 'Keep the Delivery Logs moving and watch stock coverage closely.', log: 'delivery' };
+    if (m === 4) return { label: 'Spring collection', title: 'Spring collection is underway', body: 'This is the big pickup of the year. Keep the Collection Logs moving.', log: 'collection' };
+    if (m === 11) return { label: 'Fall collection', title: 'Fall collection is underway', body: 'Fall rentals are being picked up. Keep the Collection Logs moving and lock in renewals.', log: 'collection' };
+    if (m === 9 || m === 10) return { label: 'Off season', title: 'Off season, with fall collection ahead', body: 'Fall pickups start in December. Get Collection Logs ready, lock in renewals and restock before spring orders open.', log: 'collection' };
+    if (m === 0) return { label: 'Off season', title: 'Spring term is starting', body: 'A quiet stretch: lock in renewals and restock before spring orders open.', log: 'cm' };
+    if (m === 5 || m === 6) return { label: 'Pre-season', title: 'Get ready for move-in', body: 'Restock low schools and check contracts before deliveries start in August.', log: 'delivery' };
+    if (m === 8) return { label: 'Fall term', title: 'Campuses are settled in', body: 'Stay on top of CM tasks while the fall term gets going.', log: 'cm' };
+    return { label: 'Spring term', title: 'Keep campuses running smoothly', body: 'Stay on top of CM tasks and line up renewals before the spring collection in May.', log: 'cm' };
+  }
+  var LOG_NAMES = { cm: 'CM Log', delivery: 'Delivery Log', collection: 'Collection Log' };
+  var LOG_FIELD = { cm: 'cmLogUrl', delivery: 'deliveryLogUrl', collection: 'collectionLogUrl' };
+
+  function monthStrip(now) {
+    var names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    var off = [9, 10, 11, 0];
+    var cells = names.map(function (n, i) {
+      var dot = i === 7 ? '#80BC41' : (i === 4 || i === 11) ? '#F2B544' : 'transparent';
+      var cls = 'month' + (off.indexOf(i) !== -1 ? ' off' : '') + (i === now.getMonth() ? ' now' : '');
+      return '<div class="' + cls + '"><div class="bar"><i class="dot" style="background:' + dot + '"></i></div><span>' + n + '</span></div>';
+    }).join('');
+    return '<div class="months"><div class="month-row" role="img" aria-label="Season calendar, today is in ' + names[now.getMonth()] + '">' + cells + '</div>' +
+      '<div class="legend"><span><i style="width:10px;height:10px;border-radius:3px;background:rgba(255,255,255,.28)"></i>Off season</span>' +
+      '<span><i style="width:8px;height:8px;border-radius:50%;background:#80BC41"></i>Delivery</span>' +
+      '<span><i style="width:8px;height:8px;border-radius:50%;background:#F2B544"></i>Collection</span>' +
+      '<span><i style="width:10px;height:10px;border-radius:3px;border:2px solid #fff"></i>Today</span></div></div>';
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Theme & toast                                                    */
+  /* ---------------------------------------------------------------- */
+
+  function isDark() { return document.documentElement.getAttribute('data-theme') === 'dark'; }
+  function toggleTheme() {
+    var dark = !isDark();
+    if (dark) document.documentElement.setAttribute('data-theme', 'dark');
+    else document.documentElement.removeAttribute('data-theme');
+    try { localStorage.setItem('pangia_theme', dark ? 'dark' : 'light'); } catch (e) { /* private mode */ }
+    var btn = $('[data-action="theme"]');
+    if (btn) { btn.innerHTML = icon(dark ? 'sun' : 'moon'); btn.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode'); }
+  }
+  function toast(msg, isErr) {
+    var root = $('#toast-root');
+    var el = document.createElement('div');
+    el.className = 'toast' + (isErr ? ' err' : '');
+    el.textContent = msg;
+    root.appendChild(el);
+    setTimeout(function () { el.remove(); }, isErr ? 6000 : 3200);
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* API & auth                                                       */
+  /* ---------------------------------------------------------------- */
+
+  function api(action, payload) {
+    return fetch(CFG.API_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: action, idToken: state.token, payload: payload || {} })
+    }).then(function (res) {
+      if (!res.ok) throw new Error('Pangia could not be reached. Please try again.');
+      return res.json().catch(function () {
+        throw new Error('Pangia got an unexpected reply. Check that the Apps Script is deployed with access set to "Anyone".');
+      });
+    }).then(function (json) {
+      if (json.ok) return json.data;
+      var err = new Error(json.message || 'Something went wrong.');
+      err.code = json.error;
+      err.email = json.email;
+      if (json.error === 'auth_expired') sessionExpired();
+      throw err;
+    });
+  }
+
+  function tokenValid(t) {
+    try {
+      var p = JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+      return p.exp * 1000 > Date.now() + 60000;
+    } catch (e) { return false; }
+  }
+
+  function waitForGsi(cb, tries) {
+    if (window.google && google.accounts && google.accounts.id) return cb();
+    if ((tries || 0) > 100) return;
+    setTimeout(function () { waitForGsi(cb, (tries || 0) + 1); }, 100);
+  }
+
+  var gsiReady = false;
+  function initGsi() {
+    google.accounts.id.initialize({
+      client_id: CFG.CLIENT_ID,
+      callback: onCredential,
+      auto_select: true,
+      cancel_on_tap_outside: false,
+      itp_support: true
+    });
+    gsiReady = true;
+    if (!state.token) showGsiButton(true);
+  }
+
+  function showGsiButton(prompt) {
+    if (!gsiReady) return;
+    var holder = $('#gsi-btn');
+    if (holder) {
+      holder.innerHTML = '';
+      google.accounts.id.renderButton(holder, { theme: isDark() ? 'filled_black' : 'outline', size: 'large', shape: 'pill', text: 'continue_with', width: 320 });
+    }
+    if (prompt) google.accounts.id.prompt();
+  }
+
+  function onCredential(resp) {
+    if (!resp || !resp.credential) return;
+    state.token = resp.credential;
+    try { sessionStorage.setItem('pangia_token', resp.credential); } catch (e) { /* ignore */ }
+    boot();
+  }
+
+  function sessionExpired() {
+    state.token = null;
+    try { sessionStorage.removeItem('pangia_token'); } catch (e) { /* ignore */ }
+    renderSignIn('Your session timed out. Sign in again to keep going.');
+  }
+
+  function signOut() {
+    state.token = null;
+    state.data = null;
+    state.schoolCache = {};
+    try { sessionStorage.removeItem('pangia_token'); } catch (e) { /* ignore */ }
+    if (gsiReady) google.accounts.id.disableAutoSelect();
+    closePalette();
+    renderSignIn();
+  }
+
+  function boot() {
+    renderLoading();
+    api('bootstrap').then(function (data) {
+      state.data = data;
+      state.schoolCache = {};
+      renderRoute();
+    }).catch(function (err) {
+      if (err.code === 'not_authorized') renderNoAccess(err.email);
+      else if (err.code !== 'auth_expired') renderError(err.message);
+    });
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Full-screen states                                               */
+  /* ---------------------------------------------------------------- */
+
+  function renderSignIn(note) {
+    $('#app').innerHTML =
+      '<div class="signin">' +
+      '<section class="left" aria-label="About Pangia">' +
+      '<div class="row" style="gap:12px">' + logo(40, true) + '<span style="font-family:var(--display);font-weight:800;font-size:24px">Pangia</span></div>' +
+      '<div style="display:flex;flex-direction:column;gap:20px;max-width:520px">' +
+      '<span class="season-tag">College Products · internal</span>' +
+      '<h1>Every school.<br>One place.</h1>' +
+      '<p>Products, inventory, contracts and every log for the schools you work with, the moment you sign in.</p></div>' +
+      '<div class="roles"><span><i></i>Managers</span><span><i></i>Campus Managers</span><span><i></i>School Admins</span></div>' +
+      '</section>' +
+      '<section class="right" aria-label="Sign in"><div class="signcard">' +
+      '<div style="display:flex;flex-direction:column;gap:8px"><h2>Sign in to Pangia</h2>' +
+      '<p class="sub">Use the Google account College Products has on file for you. We\'ll open the right view for your role.</p></div>' +
+      (note ? '<div class="badge b-warn" style="white-space:normal;justify-content:center">' + esc(note) + '</div>' : '') +
+      '<div id="gsi-btn"><span class="small muted">Loading Google Sign-In...</span></div>' +
+      '<div class="note">' + icon('lock') + '<span>You\'ll only see the schools assigned to you. School Admins can update their school\'s registered information.</span></div>' +
+      '</div></section></div>';
+    showGsiButton(true);
+  }
+
+  function renderLoading() {
+    $('#app').innerHTML = '<div class="shell"><aside class="side"><a class="brand" href="#/">' + logo() + '<span><b>Pangia</b><small>by College Products</small></span></a>' +
+      '<div class="skel" style="height:260px"></div></aside><div class="main"><div class="view">' +
+      '<div class="skel" style="height:60px;max-width:420px"></div><div class="skel" style="height:190px"></div>' +
+      '<div class="kpis"><div class="skel" style="height:118px"></div><div class="skel" style="height:118px"></div><div class="skel" style="height:118px"></div><div class="skel" style="height:118px"></div></div>' +
+      '<div class="skel" style="height:320px"></div></div></div></div>';
+  }
+
+  function renderNoAccess(email) {
+    $('#app').innerHTML = '<div class="center"><div class="statecard">' + logo(48) +
+      '<h1 class="h1">You don\'t have access yet</h1>' +
+      '<p class="sub">This Google account isn\'t set up in Pangia. Ask your College Products contact to add it.</p>' +
+      (email ? '<code>' + esc(email) + '</code>' : '') +
+      '<button type="button" class="btn" data-action="signout">' + icon('logout') + 'Use a different account</button></div></div>';
+  }
+
+  function renderError(msg) {
+    $('#app').innerHTML = '<div class="center"><div class="statecard">' + logo(48) +
+      '<h1 class="h1">Pangia couldn\'t load</h1><p class="sub">' + esc(msg) + '</p>' +
+      '<div class="row" style="justify-content:center"><button type="button" class="btn primary" data-action="retry">Try again</button>' +
+      '<button type="button" class="btn" data-action="signout">Sign out</button></div></div></div>';
+  }
+
+  function renderSetupNeeded() {
+    $('#app').innerHTML = '<div class="center"><div class="statecard">' + logo(48) +
+      '<h1 class="h1">Almost ready</h1><p class="sub">Add the Apps Script web app URL to <b>config.js</b> to connect Pangia.</p></div></div>';
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Shell                                                            */
+  /* ---------------------------------------------------------------- */
+
+  function navLink(href, ico, label, active, extra) {
+    return '<a href="' + href + '"' + (active ? ' class="active" aria-current="page"' : '') + '>' + icon(ico) + '<span class="grow">' + esc(label) + '</span>' + (extra || '') + '</a>';
+  }
+  function extLink(url, ico, label) {
+    var u = safeUrl(url);
+    if (!u) return '<a href="#" aria-disabled="true" style="opacity:.5" data-action="no-log">' + icon(ico) + '<span class="grow">' + esc(label) + '</span></a>';
+    return '<a href="' + esc(u) + '" target="_blank" rel="noopener">' + icon(ico) + '<span class="grow">' + esc(label) + '</span>' + icon('ext', 14) + '</a>';
+  }
+
+  function renderShell(route, inner) {
+    var d = state.data;
+    var u = d.user;
+    var r = route.name;
+    var nav = '';
+    if (u.role === 'Manager') {
+      var renewCount = d.schools.filter(function (s) { return s.contract && s.contract.status === 'Renewing soon'; }).length;
+      nav = navLink('#/', 'home', 'Home', r === 'home') +
+        '<span class="nav-label">Directory</span>' +
+        navLink('#/schools', 'school', 'Schools', r === 'schools' || r === 'school') +
+        navLink('#/contracts', 'file', 'Contracts', r === 'contracts', renewCount ? '<span class="count">' + renewCount + '</span>' : '') +
+        (d.inventoryDashboardUrl ? '<a href="' + esc(safeUrl(d.inventoryDashboardUrl)) + '" target="_blank" rel="noopener">' + icon('layers') + '<span class="grow">Inventory</span>' + icon('ext', 14) + '</a>' : '') +
+        '<span class="nav-label">Logs</span>' +
+        navLink('#/logs/cm', 'cm', 'CM Logs', route.type === 'cm') +
+        navLink('#/logs/delivery', 'delivery', 'Delivery Logs', route.type === 'delivery') +
+        navLink('#/logs/collection', 'collection', 'Collection Logs', route.type === 'collection');
+    } else if (u.role === 'Campus Manager') {
+      var tasks = d.schools.reduce(function (a, s) { return a + (s.openTasks || 0); }, 0);
+      nav = navLink('#/', 'school', 'My schools', r === 'home' || r === 'school') +
+        '<span class="nav-label">Logs</span>' +
+        navLink('#/logs/cm', 'cm', 'CM Logs', route.type === 'cm', tasks ? '<span class="count">' + tasks + '</span>' : '') +
+        navLink('#/logs/delivery', 'delivery', 'Delivery Logs', route.type === 'delivery') +
+        navLink('#/logs/collection', 'collection', 'Collection Logs', route.type === 'collection');
+    } else {
+      var s0 = d.schools[0] || {};
+      nav = navLink('#/', 'pencil', 'My school', r === 'home') +
+        '<span class="nav-label">Logs</span>' +
+        extLink(s0.cmLogUrl, 'cm', 'CM Log') + extLink(s0.deliveryLogUrl, 'delivery', 'Delivery Log') + extLink(s0.collectionLogUrl, 'collection', 'Collection Log');
+    }
+
+    var pic = safeUrl(u.picture);
+    var scopeNote = u.role === 'Manager' ? 'Manager' : u.role + (d.schools.length > 1 ? ' · ' + d.schools.length + ' schools' : '');
+    var dark = isDark();
+
+    $('#app').innerHTML =
+      '<div class="shell">' +
+      '<aside class="side"><a class="brand" href="#/">' + logo() + '<span><b>Pangia</b><small>by College Products</small></span></a>' +
+      '<nav class="nav" aria-label="Main">' + nav + '</nav>' +
+      '<div class="me"><div class="avatar">' + (pic ? '<img src="' + esc(pic) + '" alt="" referrerpolicy="no-referrer">' : esc(initials(u.name))) + '</div>' +
+      '<div class="who"><b>' + esc(u.name) + '</b><span>' + esc(scopeNote) + '</span></div>' +
+      '<button type="button" class="iconbtn" style="width:36px;height:36px;border:0" data-action="signout" aria-label="Sign out">' + icon('logout', 16) + '</button></div>' +
+      '</aside>' +
+      '<div class="main">' +
+      '<div class="topbar">' +
+      '<button type="button" class="searchbtn" data-action="palette">' + icon('search') + '<span>Search schools, people, products, logs</span><kbd>Ctrl K</kbd></button>' +
+      '<div class="top-actions">' +
+      (u.role === 'Manager' ? '<button type="button" class="iconbtn" data-action="refresh" aria-label="Refresh the directory" title="Refresh the directory">' + icon('refresh') + '</button>' : '') +
+      '<button type="button" class="iconbtn" data-action="theme" aria-label="' + (dark ? 'Switch to light mode' : 'Switch to dark mode') + '">' + icon(dark ? 'sun' : 'moon') + '</button>' +
+      '</div></div>' +
+      '<main class="view" id="view">' + inner + '</main>' +
+      '</div></div>';
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Router                                                           */
+  /* ---------------------------------------------------------------- */
+
+  function parseRoute() {
+    var h = location.hash.replace(/^#\/?/, '');
+    var qIndex = h.indexOf('?');
+    var query = {};
+    if (qIndex !== -1) {
+      h.slice(qIndex + 1).split('&').forEach(function (kv) {
+        var p = kv.split('=');
+        if (p[0]) query[decodeURIComponent(p[0])] = decodeURIComponent(p[1] || '');
+      });
+      h = h.slice(0, qIndex);
+    }
+    var parts = h.split('/');
+    if (parts[0] === 'school' && parts[1]) return { name: 'school', school: decodeURIComponent(parts.slice(1).join('/')), query: query };
+    if (parts[0] === 'logs' && LOG_NAMES[parts[1]]) return { name: 'logs', type: parts[1], query: query };
+    if (parts[0] === 'schools' && isManager()) return { name: 'schools', query: query };
+    if (parts[0] === 'contracts' && isManager()) return { name: 'contracts', query: query };
+    return { name: 'home', query: query };
+  }
+
+  function renderRoute() {
+    if (!state.data) return;
+    closePalette();
+    var route = parseRoute();
+    var r = role();
+    var html;
+    if (route.name === 'school' && r !== 'School Admin') html = viewSchoolShell(route.school);
+    else if (route.name === 'schools') html = viewSchools();
+    else if (route.name === 'contracts') html = viewContracts(route.query.school);
+    else if (route.name === 'logs' && r !== 'School Admin') html = viewLogs(route.type);
+    else if (r === 'Manager') html = viewManagerHome();
+    else if (r === 'Campus Manager') html = viewCampusHome();
+    else html = viewAdminHome();
+    renderShell(route, html);
+    window.scrollTo(0, 0);
+    if (route.name === 'school' && r !== 'School Admin') loadSchool(route.school);
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Shared view pieces                                               */
+  /* ---------------------------------------------------------------- */
+
+  function greeting() {
+    var h = new Date().getHours();
+    return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+  }
+  function today() { return new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }); }
+
+  function activityList(items, withSchool) {
+    if (!items || !items.length) return '<div class="empty">No activity yet. Contract changes, renewal reminders and registered info updates show up here.</div>';
+    return items.map(function (a) {
+      return '<div class="act"><span class="tag">' + esc(a.tag || 'P') + '</span><div class="t">' +
+        '<span>' + (withSchool && a.school ? '<b style="font-weight:600">' + esc(a.school) + '</b> <span class="muted">· ' + esc(a.text) + '</span>' : esc(a.text)) + '</span>' +
+        '<small>' + esc(a.actor) + ' · ' + esc(relTime(a.at)) + '</small></div></div>';
+    }).join('');
+  }
+
+  function logTiles(s, withNotes) {
+    return '<div class="tiles">' + ['cm', 'delivery', 'collection'].map(function (t) {
+      var u = safeUrl(s[LOG_FIELD[t]]);
+      var note = t === 'cm' && s.openTasks != null ? (s.openTasks ? s.openTasks + ' open task' + (s.openTasks === 1 ? '' : 's') : 'No open tasks') : (u ? 'Open in Google Sheets' : 'Not connected yet');
+      var inner = '<div class="row" style="justify-content:space-between"><span class="ic">' + icon(t, 20) + '</span>' + (u ? icon('ext', 16) : '') + '</div>' +
+        '<div style="display:flex;flex-direction:column;gap:4px"><b>' + LOG_NAMES[t] + '</b>' + (withNotes !== false ? '<small>' + esc(note) + '</small>' : '') + '</div>';
+      return u ? '<a class="tile" href="' + esc(u) + '" target="_blank" rel="noopener">' + inner + '</a>' : '<div class="tile off">' + inner + '</div>';
+    }).join('') + '</div>';
+  }
+
+  function seasonHero(isCompact) {
+    var s = season(new Date());
+    var action = '<a class="btn light" href="#/logs/' + s.log + '">Open ' + LOG_NAMES[s.log] + 's</a>';
+    if (isCompact) {
+      return '<section class="banner" aria-labelledby="season-h"><span class="ic">' + icon(s.log, 22, 2) + '</span>' +
+        '<div class="copy"><small>Season mode · ' + esc(s.label) + '</small><h2 id="season-h">' + esc(s.title) + '</h2><p>' + esc(s.body) + '</p></div>' +
+        '<a class="btn" href="#/logs/' + s.log + '">Open ' + LOG_NAMES[s.log] + 's</a></section>';
+    }
+    var renew = state.data.schools.filter(function (x) { return x.contract && x.contract.status === 'Renewing soon'; }).length;
+    return '<section class="hero" aria-labelledby="season-h"><div class="copy">' +
+      '<span class="season-tag">' + icon('spark', 14, 2.2) + 'Season mode · ' + esc(s.label) + '</span>' +
+      '<h2 id="season-h">' + esc(s.title) + '</h2><p>' + esc(s.body) + '</p>' +
+      '<div class="row" style="margin-top:4px">' + action + (isManager() && renew ? '<a class="btn ghost" href="#/contracts">Review ' + renew + ' renewal' + (renew === 1 ? '' : 's') + '</a>' : '') + '</div></div>' +
+      monthStrip(new Date()) + '</section>';
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Manager home                                                     */
+  /* ---------------------------------------------------------------- */
+
+  function viewManagerHome() {
+    var d = state.data;
+    var schools = d.schools;
+    var scored = schools.filter(function (s) { return s.health; });
+    var avg = scored.length ? Math.round(scored.reduce(function (a, s) { return a + s.health.score; }, 0) / scored.length) : null;
+    var renewals = schools.filter(function (s) { return s.contract && s.contract.status === 'Renewing soon'; })
+      .sort(function (a, b) { return a.contract.daysLeft - b.contract.daysLeft; });
+    var critical = schools.filter(function (s) { return s.stockStatus === 'Critical'; }).length;
+    var noContract = schools.filter(function (s) { return !s.contract; }).length;
+    var attention = scored.slice().sort(function (a, b) { return a.health.score - b.health.score; }).slice(0, 5);
+
+    var kpis = [
+      { label: 'Partner schools', value: schools.length, note: noContract ? noContract + ' without a contract on file' : 'All contracts on file', cls: noContract ? 'b-mute' : 'b-good' },
+      { label: 'Average health score', value: avg == null ? '-' : avg, note: avg == null ? 'No data yet' : avg >= 80 ? 'Healthy' : avg >= 50 ? 'Some schools need attention' : 'Needs attention', cls: avg == null ? 'b-mute' : avg >= 80 ? 'b-good' : avg >= 50 ? 'b-warn' : 'b-bad' },
+      { label: 'Renewals in 90 days', value: renewals.length, note: renewals.length ? 'Next in ' + renewals[0].contract.daysLeft + ' days' : 'Nothing due', cls: renewals.length ? 'b-warn' : 'b-good' },
+      { label: 'Critical stock', value: critical, note: critical ? 'Schools to restock' : 'No critical schools', cls: critical ? 'b-bad' : 'b-good' }
+    ];
+
+    return '<header class="pagehead"><div class="titles"><span class="eyebrow">' + esc(today()) + '</span>' +
+      '<h1 class="h1">' + greeting() + ', ' + esc(firstName(d.user.name)) + '</h1></div>' +
+      '<span class="small muted">Directory refreshed ' + esc(relTime(d.builtAt)) + '</span></header>' +
+      seasonHero(false) +
+      '<section class="kpis" aria-label="Summary">' + kpis.map(function (k) {
+        return '<div class="kpi"><span class="label">' + esc(k.label) + '</span><span class="value">' + esc(k.value) + '</span><span class="badge ' + k.cls + '" style="align-self:flex-start">' + esc(k.note) + '</span></div>';
+      }).join('') + '</section>' +
+      '<div class="grid-2">' +
+      '<section class="card" aria-labelledby="att-h"><div class="card-head"><div style="display:flex;flex-direction:column;gap:4px"><h2 id="att-h">Schools needing attention</h2><span class="hint">Lowest health scores first</span></div><a href="#/schools">See all</a></div>' +
+      (attention.length ? attention.map(function (s) {
+        return '<a class="rowlink" href="' + schoolHref(s.name) + '">' + ring(s.health.score) + '<span class="t"><b>' + esc(s.name) + '</b><span>' + esc(reasonFor(s)) + '</span></span>' + icon('chev', 16) + '</a>';
+      }).join('') : '<div class="empty">No schools found yet.</div>') + '</section>' +
+      '<div class="stack">' +
+      '<section class="card" aria-labelledby="ren-h"><div class="card-head"><div style="display:flex;flex-direction:column;gap:4px"><h2 id="ren-h">Renewals, next 90 days</h2><span class="hint">Reminders go out 60 and 30 days before the end date</span></div></div>' +
+      (renewals.length ? renewals.slice(0, 4).map(function (s) {
+        var end = toDate(s.contract.end);
+        var dl = s.contract.daysLeft;
+        var r60 = new Date(end.getTime() - 60 * 86400000);
+        var r30 = new Date(end.getTime() - 30 * 86400000);
+        var note = dl <= 30 ? '30-day reminder sent' : dl <= 60 ? '60-day reminder sent, next on ' + fmtDate(r30.toISOString(), { month: 'short', day: 'numeric' }) : '60-day reminder goes out ' + fmtDate(r60.toISOString(), { month: 'short', day: 'numeric' });
+        return '<a class="renewal" href="' + schoolHref(s.name) + '"><span class="cal"><small>' + esc(fmtDate(s.contract.end, { month: 'short' })) + '</small><b>' + end.getDate() + '</b></span>' +
+          '<span class="t" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px"><b style="font-size:14px">' + esc(s.name) + '</b><span class="small muted">' + esc(note) + '</span></span>' +
+          '<span class="badge ' + (dl <= 30 ? 'b-bad' : 'b-warn') + '">' + dl + ' days</span></a>';
+      }).join('') : '<div class="empty">No contracts end in the next 90 days.</div>') + '</section>' +
+      '<section class="card" aria-labelledby="act-h" style="gap:4px"><div class="card-head" style="margin-bottom:10px"><h2 id="act-h">Activity</h2><span class="live"><i></i>Live</span></div>' +
+      activityList(d.activity, true) + '</section>' +
+      '</div></div>';
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Schools directory (Manager)                                      */
+  /* ---------------------------------------------------------------- */
+
+  var FILTERS = [
+    { key: 'all', label: 'All schools', test: function () { return true; } },
+    { key: 'attention', label: 'Needs attention', test: function (s) { return s.health && s.health.score < 50; } },
+    { key: 'renewing', label: 'Renewing soon', test: function (s) { return s.contract && s.contract.status === 'Renewing soon'; } },
+    { key: 'critical', label: 'Critical stock', test: function (s) { return s.stockStatus === 'Critical'; } },
+    { key: 'nocontract', label: 'No contract', test: function (s) { return !s.contract; } }
+  ];
+
+  function filteredSchools() {
+    var f = FILTERS.filter(function (x) { return x.key === state.filter; })[0] || FILTERS[0];
+    var q = state.search.trim().toLowerCase();
+    return state.data.schools.filter(function (s) {
+      if (!f.test(s)) return false;
+      if (!q) return true;
+      return (s.name + ' ' + s.products.map(function (p) { return p.label; }).join(' ')).toLowerCase().indexOf(q) !== -1;
+    });
+  }
+
+  function schoolRows() {
+    var list = filteredSchools();
+    if (!list.length) return '<tr><td colspan="7"><div class="empty">No schools match.</div></td></tr>';
+    return list.map(function (s) {
+      var prods = s.products.length ? s.products.map(function (p) { return '<span class="chip">' + esc(p.label) + '</span>'; }).join('') : '<span class="small muted">Not in inventory</span>';
+      var cov = s.ordered != null ?
+        '<div class="cov"><div class="top"><span><strong>' + fmtNum(s.inStock) + '</strong> <span class="muted">/ ' + fmtNum(s.ordered) + ' ordered</span></span>' +
+        (s.stockStatus ? '<span class="badge ' + STOCK_CLASS[s.stockStatus] + '" style="padding:2px 8px;font-size:11px">' + esc(s.stockStatus) + '</span>' : '') + '</div>' +
+        covBar(s.inStock, s.ordered, s.stockStatus) + '</div>' : '<span class="small muted">No stock data</span>';
+      var logs = '<div class="logicons">' + ['cm', 'delivery', 'collection'].map(function (t) {
+        var u = safeUrl(s[LOG_FIELD[t]]);
+        return u ? '<a href="' + esc(u) + '" target="_blank" rel="noopener" aria-label="' + LOG_NAMES[t] + ' for ' + esc(s.name) + '" title="' + LOG_NAMES[t] + '">' + icon(t) + '</a>' :
+          '<span title="' + LOG_NAMES[t] + ' not connected" aria-label="' + LOG_NAMES[t] + ' not connected">' + icon(t) + '</span>';
+      }).join('') + '</div>';
+      return '<tr><td><div class="namecell">' + ring(s.health ? s.health.score : null, 42) + '<div style="display:flex;flex-direction:column;gap:2px"><a href="' + schoolHref(s.name) + '">' + esc(s.name) + '</a><span class="small muted">Health ' + (s.health ? s.health.score : '-') + ' of 100</span></div></div></td>' +
+        '<td><div class="chips">' + prods + '</div></td><td>' + cov + '</td>' +
+        '<td><div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start">' + contractBadge(s.contract) + '<span class="small muted">' + esc(contractNote(s.contract)) + '</span></div></td>' +
+        '<td style="font-weight:600">' + (s.openTasks || 0) + '</td><td>' + logs + '</td>' +
+        '<td style="text-align:right"><a class="iconbtn" style="border:0;width:36px;height:36px" href="' + schoolHref(s.name) + '" aria-label="Open ' + esc(s.name) + '">' + icon('chev') + '</a></td></tr>';
+    }).join('');
+  }
+
+  function viewSchools() {
+    var d = state.data;
+    var pills = FILTERS.map(function (f) {
+      var n = d.schools.filter(f.test).length;
+      return '<button type="button" class="pill" data-filter="' + f.key + '" aria-pressed="' + (state.filter === f.key) + '">' + esc(f.label) + ' · ' + n + '</button>';
+    }).join('');
+    return '<header class="pagehead"><div class="titles"><h1 class="h1">Schools</h1><p class="sub">Health, stock coverage and contract status for every partner school.</p></div>' +
+      '<div class="field" style="width:280px;max-width:100%"><label for="school-search" class="sr-only">Filter schools</label>' +
+      '<input id="school-search" type="search" placeholder="Filter by school or product" value="' + esc(state.search) + '" autocomplete="off"></div></header>' +
+      '<div class="row" role="group" aria-label="Quick filters">' + pills + '</div>' +
+      '<section class="tablecard" aria-label="School directory"><div class="scroll"><table>' +
+      '<thead><tr><th scope="col">School</th><th scope="col">Products</th><th scope="col">Stock coverage</th><th scope="col">Contract</th><th scope="col">Open CM tasks</th><th scope="col">Logs</th><th scope="col"><span class="sr-only">Open</span></th></tr></thead>' +
+      '<tbody id="school-rows">' + schoolRows() + '</tbody></table></div>' +
+      '<div class="tfoot"><span>Health score = contract (40) + stock coverage (40) + open CM tasks (20)</span><span>Refreshed ' + esc(relTime(d.builtAt)) + '</span></div></section>';
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* School detail (Manager, Campus Manager)                          */
+  /* ---------------------------------------------------------------- */
+
+  function viewSchoolShell(name) {
+    var s = state.data.schools.filter(function (x) { return x.name === name; })[0];
+    if (!s) return '<div class="empty">That school was not found, or it isn\'t assigned to you. <a href="#/">Go home</a></div>';
+    var back = isManager() ? '<a href="#/schools">Schools</a>' : '<a href="#/">My schools</a>';
+    var chips = contractBadge(s.contract) + s.products.map(function (p) { return '<span class="badge b-info">' + esc(p.label) + '</span>'; }).join('');
+    var cm = safeUrl(s.cmLogUrl);
+    return '<nav class="crumbs" aria-label="Breadcrumb">' + back + icon('chev', 14, 2) + '<span aria-current="page" style="color:var(--ink);font-weight:500">' + esc(s.name) + '</span></nav>' +
+      '<header class="schoolhead"><div class="who"><div class="bigmark" aria-hidden="true">' + esc(initials(s.name)) + '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:8px"><h1 class="h1">' + esc(s.name) + '</h1><div class="row" style="gap:8px">' + chips + '</div></div></div>' +
+      '<div class="row"><button type="button" class="btn" data-action="copy-link">' + icon('link', 16, 2) + 'Copy link</button>' +
+      (isManager() ? '<a class="btn" href="#/contracts?school=' + encodeURIComponent(s.name) + '">' + icon('plus', 16, 2) + 'Add contract</a>' : '') +
+      (cm ? '<a class="btn primary" href="' + esc(cm) + '" target="_blank" rel="noopener">Open CM Log' + icon('ext', 16, 2) + '</a>' : '') + '</div></header>' +
+      '<div id="school-body"><div class="grid"><div class="skel" style="height:240px"></div><div class="skel" style="height:240px"></div><div class="skel" style="height:240px"></div></div></div>';
+  }
+
+  function loadSchool(name) {
+    var cached = state.schoolCache[name];
+    if (cached) { paintSchool(name, cached); }
+    api('school', { name: name }).then(function (res) {
+      state.schoolCache[name] = res;
+      paintSchool(name, res);
+    }).catch(function (err) {
+      if (err.code === 'auth_expired') return;
+      var body = $('#school-body');
+      if (body && !cached) body.innerHTML = '<div class="empty">' + esc(err.message) + '</div>';
+    });
+  }
+
+  function paintSchool(name, res) {
+    var route = parseRoute();
+    if (route.name !== 'school' || route.school !== name) return;
+    var body = $('#school-body');
+    if (!body) return;
+    var s = res.school;
+    var mgr = isManager();
+    var h = s.health || { score: null, contract: 0, stock: 0, tasks: 0 };
+
+    var health = '<section class="card" aria-labelledby="h-h"><h2 id="h-h">Health score</h2><div class="row" style="gap:20px;flex-wrap:nowrap">' + ring(h.score, 112) +
+      '<div class="parts">' + [['Contract', h.contract, 40], ['Stock coverage', h.stock, 40], ['CM tasks', h.tasks, 20]].map(function (p) {
+        var r = p[1] / p[2];
+        var col = r >= 0.8 ? 'var(--ring-good)' : r >= 0.5 ? 'var(--ring-warn)' : 'var(--ring-bad)';
+        return '<div class="part"><div class="top"><span style="font-weight:600">' + p[0] + '</span><span class="muted">' + p[1] + ' / ' + p[2] + '</span></div><div class="track"><div style="width:' + Math.round(r * 100) + '%;background:' + col + '"></div></div></div>';
+      }).join('') + '</div></div><p class="small muted" style="margin:0">' + esc(biggestLift(h)) + '</p></section>';
+
+    var c = s.contract;
+    var contract;
+    if (!c) {
+      contract = '<section class="card"><div class="card-head"><h2>Contract</h2>' + contractBadge(null) + '</div><div class="empty">No contract on file yet.</div>' +
+        (mgr ? '<a class="btn" href="#/contracts?school=' + encodeURIComponent(s.name) + '">' + icon('plus', 16, 2) + 'Add contract</a>' : '') + '</section>';
+    } else {
+      var start = toDate(c.start), end = toDate(c.end);
+      var pct = start && end ? Math.max(0, Math.min(1, (Date.now() - start) / (end - start))) : 0;
+      var r60 = end ? new Date(end.getTime() - 60 * 86400000) : null;
+      var r30 = end ? new Date(end.getTime() - 30 * 86400000) : null;
+      var step = function (done, label, when) {
+        return '<div>' + (done ? '<span class="dotdone">' + icon('check', 12, 3) + '</span>' : '<span class="dotnext"></span>') + '<span class="grow">' + label + '</span><span class="muted">' + esc(when) + '</span></div>';
+      };
+      var live = c.status === 'Active' || c.status === 'Renewing soon';
+      contract = '<section class="card"><div class="card-head"><h2>Contract</h2>' + contractBadge(c) + '</div>' +
+        (mgr ? '<div class="dates"><div><span class="muted">Start</span><b>' + esc(fmtDate(c.start)) + '</b></div><div style="text-align:right"><span class="muted">End</span><b>' + esc(fmtDate(c.end)) + '</b></div></div>' +
+          '<div class="track lg"><div style="width:' + Math.round(pct * 100) + '%;background:var(--accent)"></div></div>' : '<div class="dates"><div><span class="muted">Ends</span><b>' + esc(fmtDate(c.end)) + '</b></div></div>') +
+        (live && r60 ? '<div class="steps">' + step(c.daysLeft <= 60, '60-day reminder', fmtDate(r60.toISOString(), { month: 'short', day: 'numeric' })) + step(c.daysLeft <= 30, '30-day reminder', fmtDate(r30.toISOString(), { month: 'short', day: 'numeric' })) + '</div>' : '') +
+        (mgr && safeUrl(c.pdf) ? '<a class="rowlink" style="margin:0;border:1px solid var(--border)" href="' + esc(safeUrl(c.pdf)) + '" target="_blank" rel="noopener">' + icon('file') + '<span class="t"><b style="font-size:14px">Signed contract</b></span><span class="small" style="color:var(--link);font-weight:600">View</span></a>' : '') +
+        '</section>';
+    }
+
+    var stock = '<section class="card"><div class="card-head"><h2>Stock coverage</h2>' + (mgr && state.data.inventoryDashboardUrl ? '<a href="' + esc(safeUrl(state.data.inventoryDashboardUrl)) + '" target="_blank" rel="noopener">Inventory dashboard</a>' : '') + '</div>' +
+      (s.products.length ? s.products.map(function (p) {
+        var cov = p.ordered ? Math.round(coverage(p.inStock, p.ordered) * 100) + '% coverage' : '';
+        return '<div style="display:flex;flex-direction:column;gap:8px"><div class="card-head"><span style="font-size:15px;font-weight:600">' + esc(p.label) + '</span><span class="badge ' + (STOCK_CLASS[p.status] || 'b-mute') + '">' + esc(p.status === 'Check' ? 'Needs a check' : p.status) + '</span></div>' +
+          covBar(p.inStock, p.ordered, p.status, true) +
+          '<span class="small muted">' + (p.inStock == null ? 'Stock count missing' : '<strong style="color:var(--ink)">' + fmtNum(p.inStock) + '</strong> in stock for ' + fmtNum(p.ordered) + ' ordered' + (cov ? ' · ' + cov : '')) + '</span></div>';
+      }).join('') : '<div class="empty">This school isn\'t in the inventory sheet yet.</div>') + '</section>';
+
+    var logs = '<section class="card span-all"><h2>Logs</h2>' + logTiles(s) + '</section>';
+
+    var people = mgr ? '<section class="card"><div class="card-head"><h2>People with access</h2></div>' +
+      ((res.people && res.people.length) ? res.people.map(function (p) {
+        return '<div class="person"><div class="avatar">' + esc(initials(p.name)) + '</div><div class="t"><b>' + esc(p.name) + '</b><span>' + esc(p.email) + '</span></div><span class="badge ' + (p.role === 'School Admin' ? 'b-good' : 'b-info') + '">' + esc(p.role) + '</span></div>';
+      }).join('') : '<div class="empty">No Campus Manager or School Admin is assigned yet. Add them in the Users &amp; Roles sheet.</div>') + '</section>' : '';
+
+    var activity = '<section class="card" style="gap:4px"><h2 style="margin-bottom:10px">Recent activity</h2>' + activityList(res.activity, false) + '</section>';
+
+    var reg = '<section class="card"><div class="card-head"><h2>Registered info</h2>' + (res.registered && res.registered.updatedAt ? '<span class="hint">Updated ' + esc(relTime(res.registered.updatedAt)) + '</span>' : '') + '</div>' +
+      regFacts(res.registered) + '</section>';
+
+    var editor = mgr ? '<section class="card span-all"><div class="card-head"><h2>Edit registered info</h2><span class="hint">School Admins can edit this too</span></div>' + regForm(s.name, res.registered, true) + '</section>' +
+      '<section class="card span-all" style="gap:6px"><div class="card-head" style="margin-bottom:8px"><h2>Change history</h2><span class="hint">Every save is kept</span></div><div id="history">' + historyList(res.history) + '</div></section>' : '';
+
+    body.innerHTML = '<div class="grid">' + (s.health ? health : '') + contract + stock + logs + people + activity + reg + editor + '</div>';
+  }
+
+  function biggestLift(h) {
+    var gaps = [['contract', 40 - h.contract, 'Get a current contract on file'], ['stock', 40 - h.stock, 'Restock this school'], ['tasks', 20 - h.tasks, 'Close out open CM tasks']]
+      .sort(function (a, b) { return b[1] - a[1]; });
+    return gaps[0][1] > 0 ? 'Biggest lift: ' + gaps[0][2].charAt(0).toLowerCase() + gaps[0][2].slice(1) + '.' : 'Everything looks healthy.';
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Registered info                                                  */
+  /* ---------------------------------------------------------------- */
+
+  function regFacts(reg) {
+    var fields = state.data.regFields || [];
+    if (!reg) return '<div class="empty">The School Admin hasn\'t added registered info yet.</div>';
+    var pick = ['office', 'contact', 'email', 'phone', 'moveIn', 'moveOut'];
+    return '<dl class="facts">' + fields.filter(function (f) { return pick.indexOf(f.key) !== -1; }).map(function (f) {
+      var v = reg[f.key];
+      if (f.type === 'date' && v) v = fmtDate(v);
+      return '<div><dt>' + esc(f.label) + '</dt><dd>' + (v ? esc(v) : '<span class="muted" style="font-weight:400">Not set</span>') + '</dd></div>';
+    }).join('') + '</dl>';
+  }
+
+  function regForm(schoolName, reg, editable) {
+    var fields = state.data.regFields || [];
+    var r = reg || {};
+    var groups = [
+      { title: 'Housing office', keys: ['office', 'contact', 'title', 'email', 'phone', 'address'] },
+      { title: 'Academic year dates', keys: ['moveIn', 'moveOut', 'notes'] }
+    ];
+    var full = ['office', 'address', 'notes'];
+    var ph = { office: 'e.g. Housing & Residential Education', contact: 'Full name', title: 'e.g. Assistant Director', email: 'name@school.edu', phone: '(555) 555-5555', address: 'Street, city, state, ZIP', notes: 'Loading dock hours, building access, anything our crew should know' };
+    var html = groups.map(function (g) {
+      return '<div class="fields"><span class="legend-title">' + g.title + '</span>' + g.keys.map(function (k) {
+        var f = fields.filter(function (x) { return x.key === k; })[0];
+        if (!f) return '';
+        var id = 'reg-' + k;
+        var common = ' id="' + id + '" name="' + k + '" maxlength="' + (f.max || 500) + '"' + (editable ? '' : ' readonly');
+        var input = k === 'notes' ?
+          '<textarea' + common + ' rows="3" placeholder="' + esc(ph[k] || '') + '">' + esc(r[k] || '') + '</textarea>' :
+          '<input' + common + ' type="' + (f.type === 'date' ? 'date' : f.type === 'email' ? 'email' : k === 'phone' ? 'tel' : 'text') + '" value="' + esc(r[k] || '') + '" placeholder="' + esc(ph[k] || '') + '">';
+        return '<div class="field' + (full.indexOf(k) !== -1 ? ' full' : '') + '"><label for="' + id + '">' + esc(f.label) + (k === 'notes' ? ' <span class="muted" style="font-weight:400">(optional)</span>' : '') + '</label>' + input + '</div>';
+      }).join('') + '</div>';
+    }).join('');
+    var saved = r.updatedAt ? 'Last saved ' + relTime(r.updatedAt) : 'Not saved yet';
+    return '<form class="form" id="reg-form" data-school="' + esc(schoolName) + '" novalidate>' + html +
+      (editable ? '<div class="formfoot"><span class="small muted" id="reg-saved">' + esc(saved) + '</span><div class="row"><button type="reset" class="btn">Discard</button><button type="submit" class="btn primary">Save changes</button></div></div>' : '') +
+      '</form>';
+  }
+
+  function historyList(items) {
+    if (!items || !items.length) return '<div class="empty">No changes yet.</div>';
+    var undoable = role() !== 'Campus Manager';
+    return items.map(function (h, i) {
+      var change = h.oldValue || h.newValue ?
+        '<span>' + (h.oldValue ? '<s>' + esc(h.oldValue) + '</s> to ' : 'Set to ') + esc(h.newValue || '(blank)') + '</span>' : '';
+      return '<div class="hist' + (i === 0 ? ' latest' : '') + '"><span class="dot" aria-hidden="true"></span><div class="t"><b>' + esc(h.field) + ' changed</b>' + change +
+        '<span>' + esc(h.by) + ' · ' + esc(relTime(h.at)) + (h.undone ? ' · Undone' : ' · College Products notified') + '</span></div>' +
+        (undoable && !h.undone ? '<button type="button" class="btn sm" data-action="undo" data-id="' + esc(h.id) + '">Undo</button>' : '') + '</div>';
+    }).join('');
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* School Admin home                                                */
+  /* ---------------------------------------------------------------- */
+
+  function viewAdminHome() {
+    var d = state.data;
+    var s = d.schools[0];
+    if (!s) return '<div class="empty">No school is assigned to your account yet. Ask your College Products contact to set this up.</div>';
+    return '<header class="schoolhead"><div class="who"><div class="bigmark" aria-hidden="true">' + esc(initials(s.name)) + '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:8px"><span class="eyebrow">' + greeting() + ', ' + esc(firstName(d.user.name)) + '</span><h1 class="h1">' + esc(s.name) + '</h1>' +
+      '<div class="row" style="gap:8px"><span class="badge b-good">Partner school</span>' + s.products.map(function (p) { return '<span class="badge b-info">' + esc(p.label) + '</span>'; }).join('') + '</div></div></div></header>' +
+      '<div class="row" style="align-items:flex-start;gap:20px">' +
+      '<section class="card" style="flex:2 1 520px;padding:28px" aria-labelledby="reg-h"><div class="card-head" style="align-items:flex-start;flex-wrap:wrap">' +
+      '<div style="display:flex;flex-direction:column;gap:6px"><h2 id="reg-h" style="font-family:var(--display);font-size:20px;font-weight:800">Registered information</h2>' +
+      '<p class="sub small" style="max-width:520px">Keep this current. College Products uses it for deliveries, print materials and move-in planning.</p></div>' +
+      '<span class="badge b-good">' + icon('check', 14, 2.4) + 'You can edit this</span></div>' + regForm(s.name, d.registered, true) + '</section>' +
+      '<div class="stack" style="flex:1 1 300px">' +
+      '<section class="card"><h2>Your logs</h2>' + logTiles(s, false) + '</section>' +
+      '<section class="card" style="gap:6px"><div class="card-head" style="margin-bottom:8px"><h2>Change history</h2><span class="hint">Every save is kept</span></div><div id="history">' + historyList(d.history) + '</div></section>' +
+      '<section class="helpcard"><h2 style="font-size:16px">Need something changed?</h2><p>Contract or product questions go to your College Products manager.</p></section>' +
+      '</div></div>';
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Campus Manager home                                              */
+  /* ---------------------------------------------------------------- */
+
+  function viewCampusHome() {
+    var d = state.data;
+    var cards = d.schools.map(function (s) {
+      var tasks = s.openTasks ? s.openTasks + ' open CM task' + (s.openTasks === 1 ? '' : 's') : 'No open CM tasks';
+      var stock = s.products.length ? s.products.map(function (p) {
+        return '<div style="display:flex;flex-direction:column;gap:6px"><div class="card-head"><span style="font-weight:600;font-size:14px">' + esc(p.label) + '</span><span class="badge ' + (STOCK_CLASS[p.status] || 'b-mute') + '" style="padding:2px 8px;font-size:11px">' + esc(p.status) + '</span></div>' +
+          covBar(p.inStock, p.ordered, p.status) + '<span class="small muted">' + (p.inStock == null ? 'Stock count missing' : '<strong style="color:var(--ink)">' + fmtNum(p.inStock) + '</strong> in stock for ' + fmtNum(p.ordered) + ' ordered') + '</span></div>';
+      }).join('') : '<div class="empty">No stock data for this school.</div>';
+      return '<article class="card" style="gap:20px;border-radius:22px"><a class="rowlink" style="margin:0;padding:0" href="' + schoolHref(s.name) + '">' + ring(s.health ? s.health.score : null, 56) +
+        '<span class="t"><b style="font-family:var(--display);font-size:20px;font-weight:800">' + esc(s.name) + '</b><span class="row" style="gap:6px">' + contractBadge(s.contract) + '<span class="badge b-info">' + esc(tasks) + '</span></span></span>' + icon('chev') + '</a>' +
+        '<div style="display:flex;flex-direction:column;gap:14px"><span class="small muted" style="font-weight:600;text-transform:uppercase;letter-spacing:.06em;font-size:12px">Stock coverage</span>' + stock + '</div>' +
+        logTiles(s, false) + '</article>';
+    }).join('');
+    return '<header class="pagehead"><div class="titles"><span class="eyebrow">' + esc(today()) + '</span><h1 class="h1">' + greeting() + ', ' + esc(firstName(d.user.name)) + '</h1></div></header>' +
+      seasonHero(true) +
+      (d.schools.length ? '<div class="grid">' + cards + '</div>' : '<div class="empty">No schools are assigned to your account yet. Ask your manager to set your school scope.</div>') +
+      '<section class="card" style="gap:4px"><h2 style="margin-bottom:10px">Recent activity at your schools</h2>' + activityList(d.activity, true) + '</section>';
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Logs list                                                        */
+  /* ---------------------------------------------------------------- */
+
+  function logRows(type) {
+    var q = state.logSearch.trim().toLowerCase();
+    var list = state.data.schools.filter(function (s) { return !q || s.name.toLowerCase().indexOf(q) !== -1; });
+    if (!list.length) return '<div class="empty">No schools match.</div>';
+    return list.map(function (s) {
+      var u = safeUrl(s[LOG_FIELD[type]]);
+      var note = type === 'cm' && s.openTasks != null ? (s.openTasks ? s.openTasks + ' open task' + (s.openTasks === 1 ? '' : 's') : 'No open tasks') : (u ? 'Open in Google Sheets' : 'Not connected yet');
+      return u ? '<a class="rowlink" href="' + esc(u) + '" target="_blank" rel="noopener"><span class="tag">' + icon(type, 18) + '</span><span class="t"><b>' + esc(s.name) + '</b><span>' + esc(note) + '</span></span>' + icon('ext', 16) + '</a>' :
+        '<div class="rowlink" style="opacity:.6"><span class="tag">' + icon(type, 18) + '</span><span class="t"><b>' + esc(s.name) + '</b><span>' + esc(note) + '</span></span></div>';
+    }).join('');
+  }
+
+  function viewLogs(type) {
+    return '<header class="pagehead"><div class="titles"><h1 class="h1">' + LOG_NAMES[type] + 's</h1><p class="sub">Open any school\'s ' + LOG_NAMES[type] + ' in Google Sheets.</p></div>' +
+      '<div class="field" style="width:280px;max-width:100%"><label for="log-search" class="sr-only">Filter schools</label><input id="log-search" type="search" placeholder="Filter schools" value="' + esc(state.logSearch) + '" autocomplete="off" data-type="' + type + '"></div></header>' +
+      '<section class="card" id="log-rows" style="gap:0">' + logRows(type) + '</section>';
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Contracts (Manager)                                              */
+  /* ---------------------------------------------------------------- */
+
+  function viewContracts(preselect) {
+    var schools = state.data.schools;
+    var rank = { 'Renewing soon': 0, 'Expired': 1, 'Pending': 2, 'Active': 3 };
+    var sorted = schools.slice().sort(function (a, b) {
+      var ra = a.contract ? rank[a.contract.status] : 4, rb = b.contract ? rank[b.contract.status] : 4;
+      if (ra !== rb) return ra - rb;
+      if (a.contract && b.contract) return new Date(a.contract.end) - new Date(b.contract.end);
+      return a.name.localeCompare(b.name);
+    });
+    var opts = '<option value="">Select a school</option>' + schools.map(function (s) {
+      return '<option value="' + esc(s.name) + '"' + (s.name === preselect ? ' selected' : '') + '>' + esc(s.name) + '</option>';
+    }).join('');
+    return '<header class="pagehead"><div class="titles"><h1 class="h1">Contracts</h1><p class="sub">Status comes from the dates, so it stays current on its own. Renewal reminders are emailed 60 and 30 days out.</p></div></header>' +
+      '<div class="grid-2">' +
+      '<section class="card" aria-labelledby="add-h"><h2 id="add-h">Add a contract</h2>' +
+      '<form class="form" id="contract-form" novalidate><div class="fields">' +
+      '<div class="field full"><label for="c-school">School</label><select id="c-school" name="school" required>' + opts + '</select></div>' +
+      '<div class="field"><label for="c-start">Start date</label><input id="c-start" name="start" type="date" required></div>' +
+      '<div class="field"><label for="c-end">End date</label><input id="c-end" name="end" type="date" required></div>' +
+      '<div class="field full"><label for="c-pdf">Signed contract PDF link <span class="muted" style="font-weight:400">(optional)</span></label><input id="c-pdf" name="pdf" type="url" placeholder="Paste a Google Drive sharing link"></div>' +
+      '</div><div class="formfoot" style="border:0;padding:0"><span class="small muted">Past contracts are kept as history.</span><button type="submit" class="btn primary">' + icon('plus', 16, 2) + 'Save contract</button></div></form></section>' +
+      '<section class="card" style="gap:0"><div class="card-head" style="margin-bottom:8px"><h2>All schools</h2><span class="hint">Renewals first</span></div>' +
+      sorted.map(function (s) {
+        return '<a class="rowlink" href="' + schoolHref(s.name) + '"><span class="t"><b>' + esc(s.name) + '</b><span>' + esc(contractNote(s.contract) || 'No contract on file') + '</span></span>' + contractBadge(s.contract) + '</a>';
+      }).join('') + '</section></div>';
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Command palette (Ctrl+K)                                         */
+  /* ---------------------------------------------------------------- */
+
+  function paletteItems() {
+    var d = state.data;
+    var items = [];
+    var r = role();
+    if (r !== 'School Admin') {
+      d.schools.forEach(function (s) {
+        var bits = [];
+        if (s.health) bits.push('Health ' + s.health.score);
+        if (s.contract && s.contract.status === 'Renewing soon') bits.push('Renewal in ' + s.contract.daysLeft + ' days');
+        if (s.ordered != null) bits.push(fmtNum(s.inStock) + ' of ' + fmtNum(s.ordered) + ' in stock');
+        items.push({ group: 'Schools', tag: initials(s.name), label: s.name, sub: bits.join(' · ') || s.products.map(function (p) { return p.label; }).join(', '), href: schoolHref(s.name), words: s.products.map(function (p) { return p.label; }).join(' ') });
+      });
+    }
+    d.schools.forEach(function (s) {
+      ['cm', 'delivery', 'collection'].forEach(function (t) {
+        var u = safeUrl(s[LOG_FIELD[t]]);
+        if (u) items.push({ group: 'Logs', tag: t === 'cm' ? 'CM' : t === 'delivery' ? 'DL' : 'CL', label: s.name + ' ' + LOG_NAMES[t], sub: 'Opens in Google Sheets', href: u, external: true });
+      });
+    });
+    if (r === 'Manager') {
+      items.push({ group: 'Go to', tag: icon('home', 16), label: 'Home', sub: 'Season, health and renewals', href: '#/', raw: true });
+      items.push({ group: 'Go to', tag: icon('school', 16), label: 'Schools', sub: 'The full directory', href: '#/schools', raw: true });
+      items.push({ group: 'Go to', tag: icon('file', 16), label: 'Contracts', sub: 'Add or review contracts', href: '#/contracts', raw: true });
+      items.push({ group: 'Actions', tag: icon('plus', 16), label: 'Add a contract', sub: 'Contracts', href: '#/contracts', raw: true });
+      items.push({ group: 'Actions', tag: icon('refresh', 16), label: 'Refresh the directory', sub: 'Re-read logs, inventory and contracts', action: 'refresh', raw: true });
+    }
+    items.push({ group: 'Actions', tag: icon(isDark() ? 'sun' : 'moon', 16), label: isDark() ? 'Switch to light mode' : 'Switch to dark mode', sub: 'Appearance', action: 'theme', raw: true });
+    items.push({ group: 'Actions', tag: icon('logout', 16), label: 'Sign out', sub: state.data.user.email, action: 'signout', raw: true });
+    return items;
+  }
+
+  function openPalette() {
+    if (!state.data || state.palette.open) return;
+    state.palette = { open: true, query: '', index: 0, items: [] };
+    $('#palette-root').innerHTML = '<div class="overlay" data-action="palette-bg"><div class="palette" role="dialog" aria-modal="true" aria-label="Search Pangia">' +
+      '<div class="q">' + icon('search', 22, 2) + '<label for="pal-q" class="sr-only">Search Pangia</label><input id="pal-q" type="text" autocomplete="off" spellcheck="false" placeholder="Search schools, logs or actions" role="combobox" aria-expanded="true" aria-controls="pal-list"><kbd>Esc</kbd></div>' +
+      '<div class="results" id="pal-list" role="listbox"></div>' +
+      '<div class="foot"><span><kbd>↑ ↓</kbd> move</span><span><kbd>Enter</kbd> open</span><span><kbd>Ctrl K</kbd> anywhere in Pangia</span></div></div></div>';
+    paintPalette();
+    $('#pal-q').focus();
+  }
+
+  function closePalette() {
+    if (!state.palette.open) return;
+    state.palette.open = false;
+    $('#palette-root').innerHTML = '';
+  }
+
+  function paintPalette() {
+    var q = state.palette.query.trim().toLowerCase();
+    var all = paletteItems();
+    var hits = all.filter(function (it) {
+      if (!q) return it.group !== 'Logs';
+      var hay = (it.label + ' ' + (it.sub || '') + ' ' + (it.words || '')).toLowerCase();
+      return q.split(/\s+/).every(function (w) { return hay.indexOf(w) !== -1; });
+    });
+    var groups = ['Schools', 'Go to', 'Logs', 'Actions'];
+    var flat = [];
+    var html = '';
+    groups.forEach(function (g) {
+      var inGroup = hits.filter(function (h) { return h.group === g; }).slice(0, q ? 6 : 5);
+      if (!inGroup.length) return;
+      html += '<div class="group">' + g + '</div>';
+      inGroup.forEach(function (it) {
+        var i = flat.length;
+        flat.push(it);
+        html += '<button type="button" class="item' + (i === state.palette.index ? ' sel' : '') + '" role="option" aria-selected="' + (i === state.palette.index) + '" data-pal="' + i + '">' +
+          '<span class="tag">' + (it.raw ? it.tag : esc(it.tag)) + '</span><span class="t"><b>' + esc(it.label) + '</b><span>' + esc(it.sub || '') + '</span></span>' +
+          (it.external ? icon('ext', 16) : (i === state.palette.index ? '<kbd>Enter</kbd>' : '')) + '</button>';
+      });
+    });
+    if (!flat.length) html = '<div class="empty" style="margin:16px">Nothing matches "' + esc(state.palette.query) + '". Try a school name or a log.</div>';
+    state.palette.items = flat;
+    if (state.palette.index >= flat.length) state.palette.index = Math.max(0, flat.length - 1);
+    $('#pal-list').innerHTML = html;
+    var sel = $('#pal-list .item.sel');
+    if (sel) sel.scrollIntoView({ block: 'nearest' });
+  }
+
+  function runPaletteItem(i) {
+    var it = state.palette.items[i];
+    if (!it) return;
+    closePalette();
+    if (it.action) return doAction(it.action);
+    if (it.external) return window.open(it.href, '_blank', 'noopener');
+    if (location.hash === it.href) renderRoute(); else location.hash = it.href;
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Actions & events                                                 */
+  /* ---------------------------------------------------------------- */
+
+  function doAction(name, el) {
+    if (name === 'theme') { toggleTheme(); if (state.palette.open) paintPalette(); return; }
+    if (name === 'signout') return signOut();
+    if (name === 'retry') return boot();
+    if (name === 'palette') return openPalette();
+    if (name === 'no-log') return toast('This log is not connected yet.');
+    if (name === 'copy-link') {
+      var text = location.href;
+      if (navigator.clipboard) navigator.clipboard.writeText(text).then(function () { toast('Link copied'); }, function () { toast(text); });
+      else toast(text);
+      return;
+    }
+    if (name === 'refresh') {
+      var btn = $('[data-action="refresh"]');
+      if (btn) btn.classList.add('spin');
+      toast('Refreshing the directory. This can take a minute.');
+      return api('refresh').then(function (data) {
+        state.data = data;
+        state.schoolCache = {};
+        renderRoute();
+        toast('Directory refreshed');
+      }).catch(function (err) {
+        if (btn) btn.classList.remove('spin');
+        if (err.code !== 'auth_expired') toast(err.message, true);
+      });
+    }
+    if (name === 'undo' && el) {
+      el.disabled = true;
+      return api('undoChange', { id: el.getAttribute('data-id') }).then(function (res) {
+        applyRegResult(res);
+        toast('Change undone');
+      }).catch(function (err) {
+        el.disabled = false;
+        if (err.code !== 'auth_expired') toast(err.message, true);
+      });
+    }
+  }
+
+  function applyRegResult(res) {
+    var route = parseRoute();
+    if (role() === 'School Admin') {
+      state.data.registered = res.registered;
+      state.data.history = res.history;
+      renderRoute();
+    } else if (route.name === 'school') {
+      var c = state.schoolCache[route.school];
+      if (c) { c.registered = res.registered; c.history = res.history; paintSchool(route.school, c); }
+    }
+  }
+
+  document.addEventListener('click', function (e) {
+    var pal = e.target.closest('[data-pal]');
+    if (pal) { e.preventDefault(); return runPaletteItem(Number(pal.getAttribute('data-pal'))); }
+    if (e.target.matches('[data-action="palette-bg"]')) return closePalette();
+    var act = e.target.closest('[data-action]');
+    if (act && act.getAttribute('data-action') !== 'palette-bg') {
+      e.preventDefault();
+      return doAction(act.getAttribute('data-action'), act);
+    }
+    var f = e.target.closest('[data-filter]');
+    if (f) {
+      state.filter = f.getAttribute('data-filter');
+      document.querySelectorAll('[data-filter]').forEach(function (b) { b.setAttribute('aria-pressed', String(b === f)); });
+      var rows = $('#school-rows');
+      if (rows) rows.innerHTML = schoolRows();
+    }
+  });
+
+  document.addEventListener('input', function (e) {
+    if (e.target.id === 'school-search') {
+      state.search = e.target.value;
+      var rows = $('#school-rows');
+      if (rows) rows.innerHTML = schoolRows();
+    } else if (e.target.id === 'log-search') {
+      state.logSearch = e.target.value;
+      var lr = $('#log-rows');
+      if (lr) lr.innerHTML = logRows(e.target.getAttribute('data-type'));
+    } else if (e.target.id === 'pal-q') {
+      state.palette.query = e.target.value;
+      state.palette.index = 0;
+      paintPalette();
+    }
+  });
+
+  document.addEventListener('submit', function (e) {
+    var form = e.target;
+    if (form.id === 'reg-form') {
+      e.preventDefault();
+      var values = {};
+      (state.data.regFields || []).forEach(function (f) { var el = form.elements[f.key]; if (el) values[f.key] = el.value.trim(); });
+      if (values.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) { toast('Please enter a valid email address.', true); return; }
+      var btn = form.querySelector('[type="submit"]');
+      btn.disabled = true; btn.textContent = 'Saving...';
+      api('saveRegisteredInfo', { school: form.getAttribute('data-school'), values: values }).then(function (res) {
+        applyRegResult(res);
+        toast(res.changed ? 'Saved. College Products has been notified.' : 'No changes to save.');
+      }).catch(function (err) {
+        btn.disabled = false; btn.textContent = 'Save changes';
+        if (err.code !== 'auth_expired') toast(err.message, true);
+      });
+    } else if (form.id === 'contract-form') {
+      e.preventDefault();
+      var data = { school: form.elements.school.value, start: form.elements.start.value, end: form.elements.end.value, pdf: form.elements.pdf.value.trim() };
+      if (!data.school || !data.start || !data.end) { toast('School, start date and end date are required.', true); return; }
+      if (data.end < data.start) { toast('The end date must be after the start date.', true); return; }
+      var b = form.querySelector('[type="submit"]');
+      b.disabled = true; b.textContent = 'Saving...';
+      api('addContract', data).then(function (res) {
+        state.data = res;
+        state.schoolCache = {};
+        toast('Contract saved for ' + data.school);
+        location.hash = schoolHref(data.school);
+      }).catch(function (err) {
+        b.disabled = false; b.textContent = 'Save contract';
+        if (err.code !== 'auth_expired') toast(err.message, true);
+      });
+    }
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+      e.preventDefault();
+      if (state.palette.open) closePalette(); else openPalette();
+      return;
+    }
+    if (!state.palette.open) return;
+    if (e.key === 'Escape') { e.preventDefault(); closePalette(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); state.palette.index = Math.min(state.palette.index + 1, state.palette.items.length - 1); paintPalette(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); state.palette.index = Math.max(state.palette.index - 1, 0); paintPalette(); }
+    else if (e.key === 'Enter' && e.target.id === 'pal-q') { e.preventDefault(); runPaletteItem(state.palette.index); }
+  });
+
+  window.addEventListener('hashchange', renderRoute);
+
+  /* ---------------------------------------------------------------- */
+  /* Start                                                            */
+  /* ---------------------------------------------------------------- */
+
+  function start() {
+    if (!CFG.API_URL || !/^https:\/\//.test(CFG.API_URL)) { renderSetupNeeded(); return; }
+    var saved = null;
+    try { saved = sessionStorage.getItem('pangia_token'); } catch (e) { /* ignore */ }
+    if (saved && tokenValid(saved)) { state.token = saved; boot(); }
+    else renderSignIn();
+    waitForGsi(initGsi);
+  }
+
+  start();
+})();
