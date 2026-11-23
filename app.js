@@ -475,7 +475,7 @@
   function logTiles(s, withNotes) {
     return '<div class="tiles">' + ['cm', 'delivery', 'collection'].map(function (t) {
       var u = safeUrl(s[LOG_FIELD[t]]);
-      var note = t === 'cm' && s.openTasks != null ? (s.openTasks ? s.openTasks + ' open task' + (s.openTasks === 1 ? '' : 's') : 'No open tasks') : (u ? 'Open in Google Sheets' : 'Not connected yet');
+      var note = t === 'cm' && s.openTasks != null ? (s.openTasks ? s.openTasks + ' open task' + (s.openTasks === 1 ? '' : 's') : 'No open tasks') : (u ? 'Open in Google Sheets' : t === 'cm' && s.contractOnly ? 'No CM Log for this school' : 'Not connected yet');
       var inner = '<div class="row" style="justify-content:space-between"><span class="ic">' + icon(t, 20) + '</span>' + (u ? icon('ext', 16) : '') + '</div>' +
         '<div style="display:flex;flex-direction:column;gap:4px"><b>' + LOG_NAMES[t] + '</b>' + (withNotes !== false ? '<small>' + esc(note) + '</small>' : '') + '</div>';
       return u ? '<a class="tile" href="' + esc(u) + '" target="_blank" rel="noopener">' + inner + '</a>' : '<div class="tile off">' + inner + '</div>';
@@ -558,7 +558,9 @@
     { key: 'attention', label: 'Needs attention', test: function (s) { return s.health && s.health.score < 50; } },
     { key: 'renewing', label: 'Renewing soon', test: function (s) { return s.contract && s.contract.status === 'Renewing soon'; } },
     { key: 'critical', label: 'Critical stock', test: function (s) { return s.stockStatus === 'Critical'; } },
-    { key: 'nocontract', label: 'No contract', test: function (s) { return !s.contract; } }
+    { key: 'nocontract', label: 'No contract', test: function (s) { return !s.contract; } },
+    { key: 'lease', label: 'Leases', test: function (s) { return s.contract && s.contract.type === 'Lease'; } },
+    { key: 'confirm', label: 'To confirm', test: function (s) { return s.contract && /blank|not signed|no start/i.test(s.contract.note || ''); } }
   ];
 
   function filteredSchools() {
@@ -588,7 +590,7 @@
       return '<tr><td><div class="namecell">' + ring(s.health ? s.health.score : null, 42) + '<div style="display:flex;flex-direction:column;gap:2px"><a href="' + schoolHref(s.name) + '">' + esc(s.name) + '</a><span class="small muted">Health ' + (s.health ? s.health.score : '-') + ' of 100</span></div></div></td>' +
         '<td><div class="chips">' + prods + '</div></td><td>' + cov + '</td>' +
         '<td><div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start">' + contractBadge(s.contract) + '<span class="small muted">' + esc(contractNote(s.contract)) + '</span></div></td>' +
-        '<td style="font-weight:600">' + (s.openTasks || 0) + '</td><td>' + logs + '</td>' +
+        '<td style="font-weight:600">' + (s.openTasks == null ? '<span class="small muted" style="font-weight:400">No CM Log</span>' : s.openTasks) + '</td><td>' + logs + '</td>' +
         '<td style="text-align:right"><a class="iconbtn" style="border:0;width:36px;height:36px" href="' + schoolHref(s.name) + '" aria-label="Open ' + esc(s.name) + '">' + icon('chev') + '</a></td></tr>';
     }).join('');
   }
@@ -617,7 +619,9 @@
     var s = state.data.schools.filter(function (x) { return x.name === name; })[0];
     if (!s) return '<div class="empty">That school was not found, or it isn\'t assigned to you. <a href="#/">Go home</a></div>';
     var back = isManager() ? '<a href="#/schools">Schools</a>' : '<a href="#/">My schools</a>';
-    var chips = contractBadge(s.contract) + s.products.map(function (p) { return '<span class="badge b-info">' + esc(p.label) + '</span>'; }).join('');
+    var chips = contractBadge(s.contract) + (s.contract && s.contract.type ? '<span class="badge b-mute">' + esc(s.contract.type) + '</span>' : '') +
+      (s.contractOnly ? '<span class="badge b-mute">No CM Log</span>' : '') +
+      s.products.map(function (p) { return '<span class="badge b-info">' + esc(p.label) + '</span>'; }).join('');
     var cm = safeUrl(s.cmLogUrl);
     return '<nav class="crumbs" aria-label="Breadcrumb">' + back + icon('chev', 14, 2) + '<span aria-current="page" style="color:var(--ink);font-weight:500">' + esc(s.name) + '</span></nav>' +
       '<header class="schoolhead"><div class="who"><div class="bigmark" aria-hidden="true">' + esc(initials(s.name)) + '</div>' +
@@ -675,6 +679,7 @@
         (mgr ? '<div class="dates"><div><span class="muted">Start</span><b>' + esc(fmtDate(c.start)) + '</b></div><div style="text-align:right"><span class="muted">End</span><b>' + esc(fmtDate(c.end)) + '</b></div></div>' +
           '<div class="track lg"><div style="width:' + Math.round(pct * 100) + '%;background:var(--accent)"></div></div>' : '<div class="dates"><div><span class="muted">Ends</span><b>' + esc(fmtDate(c.end)) + '</b></div></div>') +
         (live && r60 ? '<div class="steps">' + step(c.daysLeft <= 60, '60-day reminder', fmtDate(r60.toISOString(), { month: 'short', day: 'numeric' })) + step(c.daysLeft <= 30, '30-day reminder', fmtDate(r30.toISOString(), { month: 'short', day: 'numeric' })) + '</div>' : '') +
+        (mgr && c.note && /blank|not signed|no start/i.test(c.note) ? '<div class="badge b-warn" style="white-space:normal;align-self:flex-start">' + icon('alert', 14, 2) + 'Confirm: ' + esc(c.note.split('.')[0]) + '</div>' : '') +
         (mgr && safeUrl(c.pdf) ? '<a class="rowlink" style="margin:0;border:1px solid var(--border)" href="' + esc(safeUrl(c.pdf)) + '" target="_blank" rel="noopener">' + icon('file') + '<span class="t"><b style="font-size:14px">Signed contract</b></span><span class="small" style="color:var(--link);font-weight:600">View</span></a>' : '') +
         '</section>';
     }
@@ -846,14 +851,13 @@
       if (a.contract && b.contract) return new Date(a.contract.end) - new Date(b.contract.end);
       return a.name.localeCompare(b.name);
     });
-    var opts = '<option value="">Select a school</option>' + schools.map(function (s) {
-      return '<option value="' + esc(s.name) + '"' + (s.name === preselect ? ' selected' : '') + '>' + esc(s.name) + '</option>';
-    }).join('');
+    var opts = schools.map(function (s) { return '<option value="' + esc(s.name) + '"></option>'; }).join('');
     return '<header class="pagehead"><div class="titles"><h1 class="h1">Contracts</h1><p class="sub">Status comes from the dates, so it stays current on its own. Renewal reminders are emailed 60 and 30 days out.</p></div></header>' +
       '<div class="grid-2">' +
       '<section class="card" aria-labelledby="add-h"><h2 id="add-h">Add a contract</h2>' +
       '<form class="form" id="contract-form" novalidate><div class="fields">' +
-      '<div class="field full"><label for="c-school">School</label><select id="c-school" name="school" required>' + opts + '</select></div>' +
+      '<div class="field full"><label for="c-school">School</label><input id="c-school" name="school" list="c-schools" required autocomplete="off" placeholder="Pick a school, or type a new lease school" value="' + esc(preselect || '') + '"><datalist id="c-schools">' + opts + '</datalist></div>' +
+      '<div class="field full"><label for="c-type">Contract type</label><select id="c-type" name="type"><option>Rental</option><option>Lease</option></select></div>' +
       '<div class="field"><label for="c-start">Start date</label><input id="c-start" name="start" type="date" required></div>' +
       '<div class="field"><label for="c-end">End date</label><input id="c-end" name="end" type="date" required></div>' +
       '<div class="field full"><label for="c-pdf">Signed contract PDF link <span class="muted" style="font-weight:400">(optional)</span></label><input id="c-pdf" name="pdf" type="url" placeholder="Paste a Google Drive sharing link"></div>' +
@@ -1062,7 +1066,7 @@
       });
     } else if (form.id === 'contract-form') {
       e.preventDefault();
-      var data = { school: form.elements.school.value, start: form.elements.start.value, end: form.elements.end.value, pdf: form.elements.pdf.value.trim() };
+      var data = { school: form.elements.school.value.trim(), type: form.elements.type.value, start: form.elements.start.value, end: form.elements.end.value, pdf: form.elements.pdf.value.trim() };
       if (!data.school || !data.start || !data.end) { toast('School, start date and end date are required.', true); return; }
       if (data.end < data.start) { toast('The end date must be after the start date.', true); return; }
       var b = form.querySelector('[type="submit"]');
