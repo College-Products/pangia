@@ -428,3 +428,6 @@ a.copybtn { text-decoration: none; }
 
 .mappanel > * { flex-shrink: 0; }
 .pill[aria-pressed="true"] .dot { box-shadow: 0 0 0 2px #FFFFFF; }
+
+.pangia-tiles { filter: saturate(.55) contrast(.97); }
+[data-theme="dark"] .pangia-tiles { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.88) saturate(.45); }

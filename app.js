@@ -1536,8 +1536,10 @@
     var L = window.L;
     if (!L || !state.mapObj) return;
     if (state.mapTiles) state.mapObj.removeLayer(state.mapTiles);
-    var url = isDark() ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
-    state.mapTiles = L.tileLayer(url, { maxZoom: 18, subdomains: 'abcd', attribution: '&copy; OpenStreetMap contributors &copy; CARTO' }).addTo(state.mapObj);
+    // OpenStreetMap tiles need no key. Dark mode is done with a CSS filter on the tiles.
+    state.mapTiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, className: 'pangia-tiles', attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors'
+    }).addTo(state.mapObj);
   }
 
   function drawMarkers(fit) {
