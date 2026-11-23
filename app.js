@@ -10,6 +10,10 @@
     filter: 'all',
     search: '',
     logSearch: '',
+    contactFilter: 'all',
+    contactSearch: '',
+    contactSchool: '',
+    modal: false,
     palette: { open: false, query: '', index: 0, items: [] }
   };
 
@@ -83,7 +87,14 @@
     lock: 'M6 10h12v11H6zM8 10V7a4 4 0 0 1 8 0v3',
     plus: 'M12 5v14M5 12h14',
     user: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
-    pencil: 'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z'
+    pencil: 'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z',
+    users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
+    copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
+    mail: 'M3 5h18v14H3zM3 6l9 7 9-7',
+    phone: 'M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z',
+    pin: 'M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21zM12 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
+    globe: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18',
+    x: 'M6 6l12 12M18 6L6 18'
   };
   function icon(name, size, stroke) {
     return '<svg class="i" width="' + (size || 18) + '" height="' + (size || 18) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + (stroke || 1.8) + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + PATHS[name] + '"></path></svg>';
@@ -366,9 +377,11 @@
     var nav = '';
     if (u.role === 'Manager') {
       var renewCount = d.schools.filter(function (s) { return s.contract && s.contract.status === 'Renewing soon'; }).length;
+      var reviewCount = (d.contacts || []).filter(function (ct) { return ct.review && ct.status === 'Active'; }).length;
       nav = navLink('#/', 'home', 'Home', r === 'home') +
         '<span class="nav-label">Directory</span>' +
         navLink('#/schools', 'school', 'Schools', r === 'schools' || r === 'school') +
+        navLink('#/contacts', 'users', 'Contacts', r === 'contacts', reviewCount ? '<span class="count">' + reviewCount + '</span>' : '') +
         navLink('#/contracts', 'file', 'Contracts', r === 'contracts', renewCount ? '<span class="count">' + renewCount + '</span>' : '') +
         (d.inventoryDashboardUrl ? '<a href="' + esc(safeUrl(d.inventoryDashboardUrl)) + '" target="_blank" rel="noopener">' + icon('layers') + '<span class="grow">Inventory</span>' + icon('ext', 14) + '</a>' : '') +
         '<span class="nav-label">Logs</span>' +
@@ -378,6 +391,7 @@
     } else if (u.role === 'Campus Manager') {
       var tasks = d.schools.reduce(function (a, s) { return a + (s.openTasks || 0); }, 0);
       nav = navLink('#/', 'school', 'My schools', r === 'home' || r === 'school') +
+        navLink('#/contacts', 'users', 'Contacts', r === 'contacts') +
         '<span class="nav-label">Logs</span>' +
         navLink('#/logs/cm', 'cm', 'CM Logs', route.type === 'cm', tasks ? '<span class="count">' + tasks + '</span>' : '') +
         navLink('#/logs/delivery', 'delivery', 'Delivery Logs', route.type === 'delivery') +
@@ -432,18 +446,25 @@
     if (parts[0] === 'logs' && LOG_NAMES[parts[1]]) return { name: 'logs', type: parts[1], query: query };
     if (parts[0] === 'schools' && isManager()) return { name: 'schools', query: query };
     if (parts[0] === 'contracts' && isManager()) return { name: 'contracts', query: query };
+    if (parts[0] === 'contacts' && role() !== 'School Admin') return { name: 'contacts', query: query };
     return { name: 'home', query: query };
   }
 
   function renderRoute() {
     if (!state.data) return;
     closePalette();
+    closeModal();
     var route = parseRoute();
     var r = role();
     var html;
     if (route.name === 'school' && r !== 'School Admin') html = viewSchoolShell(route.school);
     else if (route.name === 'schools') html = viewSchools();
     else if (route.name === 'contracts') html = viewContracts(route.query.school);
+    else if (route.name === 'contacts') {
+      if (route.query.school != null) { state.contactSchool = route.query.school; state.contactFilter = 'all'; }
+      if (route.query.filter) state.contactFilter = route.query.filter;
+      html = viewContacts();
+    }
     else if (route.name === 'logs' && r !== 'School Admin') html = viewLogs(route.type);
     else if (r === 'Manager') html = viewManagerHome();
     else if (r === 'Campus Manager') html = viewCampusHome();
@@ -708,7 +729,7 @@
       '<section class="card span-all" style="gap:6px"><div class="card-head" style="margin-bottom:8px"><h2>Change history</h2><span class="hint">Every save is kept</span></div><div id="history">' + historyList(res.history) + '</div></section>' : '';
 
     var contractsCard = mgr ? contractRecords(s.name, res) : '';
-    body.innerHTML = '<div class="grid">' + (s.health ? health : '') + contract + stock + contractsCard + logs + people + activity + reg + editor + '</div>';
+    body.innerHTML = '<div class="grid">' + (s.health ? health : '') + contract + stock + contactsCard(s.name, res.contacts || [], res.contactHistory) + contractsCard + logs + profileCard(res.profile) + people + activity + reg + editor + '</div>';
   }
 
   function contractRecords(schoolName, res) {
@@ -828,6 +849,7 @@
       '<span class="badge b-good">' + icon('check', 14, 2.4) + 'You can edit this</span></div>' + regForm(s.name, d.registered, true) + '</section>' +
       '<div class="stack" style="flex:1 1 300px">' +
       '<section class="card"><h2>Your logs</h2>' + logTiles(s, false) + '</section>' +
+      ((d.contacts || []).length ? '<section class="card" style="gap:4px"><div class="card-head" style="margin-bottom:6px"><h2>Contacts on file</h2><span class="hint">Who we reach out to</span></div>' + d.contacts.map(function (ct) { return contactPerson(ct, false); }).join('') + '<p class="small muted" style="margin:10px 0 0">Something out of date? Let your College Products manager know.</p></section>' : '') +
       '<section class="card" style="gap:6px"><div class="card-head" style="margin-bottom:8px"><h2>Change history</h2><span class="hint">Every save is kept</span></div><div id="history">' + historyList(d.history) + '</div></section>' +
       '<section class="helpcard"><h2 style="font-size:16px">Need something changed?</h2><p>Contract or product questions go to your College Products manager.</p></section>' +
       '</div></div>';
@@ -909,6 +931,252 @@
   }
 
   /* ---------------------------------------------------------------- */
+  /* Contacts                                                         */
+  /* ---------------------------------------------------------------- */
+
+  var ROLE_CLASS = { Primary: 'b-good', Secondary: 'b-info', Housing: 'b-info', Billing: 'b-mute', Other: 'b-mute' };
+
+  function webUrl(u) {
+    u = String(u || '').trim();
+    if (/^https?:\/\/[^\s"'<>]+$/i.test(u)) return u;
+    if (/^[a-z0-9-]+(\.[a-z0-9-]+)+(\/[^\s"'<>]*)?$/i.test(u)) return 'https://' + u;
+    return '';
+  }
+  function telHref(p) {
+    var m = String(p || '').match(/\+?\d[\d\s().-]{5,}\d/);
+    return m ? 'tel:' + m[0].replace(/[^\d+]/g, '') : '';
+  }
+  function money(n) { return n == null ? '' : '$' + Number(n).toFixed(2); }
+  function copyBtn(text, what) {
+    return '<button type="button" class="copybtn" data-action="copy" data-copy="' + esc(text) + '" aria-label="Copy ' + esc(what) + '" title="Copy ' + esc(what) + '">' + icon('copy', 15, 2) + '</button>';
+  }
+  function reachLine(kind, value) {
+    if (!value) return '';
+    var href = kind === 'mail' ? 'mailto:' + value : telHref(value);
+    return '<div class="reachline">' + icon(kind, 14, 2) + (href ? '<a href="' + esc(href) + '">' + esc(value) + '</a>' : '<span>' + esc(value) + '</span>') + copyBtn(value, kind === 'mail' ? 'email' : 'phone') + '</div>';
+  }
+
+  function contactPerson(ct, editable) {
+    return '<div class="contact' + (ct.status === 'Inactive' ? ' inactive' : '') + '">' +
+      '<div class="avatar" aria-hidden="true">' + esc(initials(ct.name)) + '</div>' +
+      '<div class="t"><div class="nm"><b>' + esc(ct.name) + '</b><span class="badge sm ' + (ROLE_CLASS[ct.role] || 'b-mute') + '">' + esc(ct.role) + '</span>' +
+      (ct.status === 'Inactive' ? '<span class="badge sm b-mute">Inactive</span>' : '') +
+      (ct.review ? '<span class="badge sm b-warn">' + icon('alert', 12, 2.2) + 'Review</span>' : '') + '</div>' +
+      (ct.title ? '<span class="small muted">' + esc(ct.title) + '</span>' : '') +
+      '<div class="reach">' + reachLine('mail', ct.email) + reachLine('phone', ct.phone) + '</div>' +
+      (ct.review ? '<div class="reviewnote">' + esc(ct.review) + '</div>' : '') + '</div>' +
+      (editable ? '<button type="button" class="copybtn" data-action="edit-contact" data-id="' + esc(ct.id) + '" aria-label="Edit ' + esc(ct.name) + '" title="Edit">' + icon('pencil', 15, 2) + '</button>' : '') +
+      '</div>';
+  }
+
+  function contactsCard(schoolName, contacts, hist) {
+    var mgr = isManager();
+    var list = contacts.slice().sort(function (a, b) { return (a.status === 'Inactive') - (b.status === 'Inactive'); });
+    var active = list.filter(function (c) { return c.status === 'Active'; }).length;
+    var histHtml = (mgr && hist && hist.length) ? '<details class="morebox"><summary>Contact changes · ' + hist.length + '</summary>' + hist.map(function (h) {
+      return '<div class="hist"><span class="dot" aria-hidden="true"></span><div class="t"><b>' + esc(h.field) + '</b>' +
+        '<span>' + (h.oldValue ? '<s>' + esc(h.oldValue) + '</s> to ' : '') + esc(h.newValue || '(blank)') + '</span>' +
+        '<span>' + esc(h.by) + ' · ' + esc(relTime(h.at)) + '</span></div></div>';
+    }).join('') + '</details>' : '';
+    return '<section class="card span-all" aria-labelledby="ct-h"><div class="card-head"><div style="display:flex;flex-direction:column;gap:4px"><h2 id="ct-h">Contacts</h2>' +
+      '<span class="hint">' + (active ? active + ' active contact' + (active === 1 ? '' : 's') : 'No active contacts yet') + '</span></div>' +
+      '<div class="row">' + (mgr ? '<button type="button" class="btn sm" data-action="add-contact" data-school="' + esc(schoolName) + '">' + icon('plus', 15, 2) + 'Add contact</button>' : '') +
+      '<a class="btn sm" href="#/contacts?school=' + encodeURIComponent(schoolName) + '">All contacts</a></div></div>' +
+      (list.length ? '<div class="contact-grid">' + list.map(function (c) { return contactPerson(c, mgr); }).join('') + '</div>' : '<div class="empty">No contacts on file for this school yet.</div>') +
+      histHtml + '</section>';
+  }
+
+  function profileCard(p) {
+    if (!p) return '';
+    var mgr = isManager();
+    var a = p.address || {};
+    var addrLines = [a.attention, a.line1, a.line2, [a.city, [a.state, a.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')].filter(Boolean);
+    var addrText = addrLines.join('\n');
+    var block = function (title, inner) { return inner ? '<div class="pblock"><span class="legend-title">' + title + '</span>' + inner + '</div>' : ''; };
+    var link = function (label, u) { var w = webUrl(u); return w ? '<a class="plink" href="' + esc(w) + '" target="_blank" rel="noopener">' + icon('globe', 15, 2) + '<span>' + esc(label) + '</span>' + icon('ext', 13, 2) + '</a>' : ''; };
+    var yn = function (label, v) { if (!v) return ''; var yes = /^y/i.test(v); return '<span class="badge sm ' + (yes ? 'b-good' : 'b-mute') + '">' + esc(label) + ': ' + (yes ? 'Yes' : 'No') + '</span>'; };
+
+    var col1 = block('Mailing address', addrLines.length ? '<div class="row" style="gap:6px;align-items:flex-start;flex-wrap:nowrap"><div class="addr">' + esc(addrText) + '</div>' + copyBtn(addrText, 'address') + '</div>' : '<div class="small muted">No mailing address on file.</div>') +
+      block('Links', link('School website', p.website) + link('Housing page', p.housingUrl) + link('Our listing on their site', p.listingUrl)) +
+      (p.marketing ? block('Print materials', '<div class="chips">' + yn('Rack cards in stock', p.marketing.rackStock) + yn('Posters in stock', p.marketing.posterStock) + yn('Rack cards shipped', p.marketing.rackShipped) + yn('Posters shipped', p.marketing.posterShipped) + '</div>') : '') +
+      (mgr && p.listingNotes ? block('Listing notes', '<p class="small" style="margin:0;white-space:pre-line">' + esc(p.listingNotes) + '</p>') : '');
+
+    var facts = [['Products offered', p.products], ['Service', p.service], ['Service requirements', p.requirements], ['School rules', p.regulations]].filter(function (f) { return f[1]; });
+    var prices = (p.pricing || []).length ? '<table class="prices"><thead><tr><th>Product</th><th class="num">Regular</th><th class="num">Early bird</th></tr></thead><tbody>' + p.pricing.map(function (x) {
+      return '<tr><td><b>' + esc(x.product) + '</b>' + (x.notes ? '<div class="small muted">' + esc(x.notes) + '</div>' : '') + '</td><td class="num">' + esc(money(x.regular)) + '</td><td class="num">' + (x.earlyBird != null ? esc(money(x.earlyBird)) : '<span class="muted">None</span>') + '</td></tr>';
+    }).join('') + '</tbody></table>' : '';
+    var col2 = block('Service', facts.length ? '<dl class="facts one">' + facts.map(function (f) { return '<div><dt>' + f[0] + '</dt><dd>' + esc(f[1]) + '</dd></div>'; }).join('') + '</dl>' : '') +
+      block('Pricing', prices);
+
+    var dorms = p.dorms || [];
+    var chip = function (n) { return '<span class="chip">' + esc(n) + '</span>'; };
+    var dormHtml = dorms.length ? '<div class="chips">' + dorms.slice(0, 14).map(chip).join('') + '</div>' +
+      (dorms.length > 14 ? '<details class="morebox"><summary>Show all ' + dorms.length + ' halls</summary><div class="chips" style="margin-top:10px">' + dorms.slice(14).map(chip).join('') + '</div></details>' : '') : '';
+    var flags = (p.flags || []).length ? '<div style="display:flex;flex-direction:column;gap:8px">' + p.flags.map(function (f) {
+      return '<div class="reviewnote" style="margin:0"><b>' + esc(f.area) + ':</b> ' + esc(f.issue) + '</div>';
+    }).join('') + '</div>' : '';
+    var col3 = block('Residence halls' + (dorms.length ? ' · ' + dorms.length : ''), dormHtml || '<div class="small muted">No residence halls on file.</div>') +
+      (mgr ? block('Data to review', flags) : '');
+
+    return '<section class="card span-all" aria-labelledby="pf-h"><div class="card-head"><h2 id="pf-h">School profile</h2>' +
+      (mgr && p.code ? '<span class="hint">School code: <b style="color:var(--ink)">' + esc(p.code) + '</b></span>' : '') + '</div>' +
+      '<div class="profile-grid"><div class="stack" style="gap:22px">' + col1 + '</div><div class="stack" style="gap:22px">' + col2 + '</div><div class="stack" style="gap:22px">' + col3 + '</div></div></section>';
+  }
+
+  var CONTACT_FILTERS = [
+    { key: 'all', label: 'All', mgr: false },
+    { key: 'primary', label: 'Primary', mgr: false },
+    { key: 'other', label: 'Other roles', mgr: false },
+    { key: 'review', label: 'Needs review', mgr: true },
+    { key: 'inactive', label: 'Inactive', mgr: true },
+    { key: 'missing', label: 'Schools with no contact', mgr: false }
+  ];
+
+  function contactMatches(ct, f) {
+    if (f === 'inactive') { if (ct.status !== 'Inactive') return false; }
+    else if (ct.status !== 'Active') return false;
+    if (f === 'primary' && ct.role !== 'Primary') return false;
+    if (f === 'other' && ct.role === 'Primary') return false;
+    if (f === 'review' && !ct.review) return false;
+    return true;
+  }
+
+  function filteredContacts() {
+    var q = state.contactSearch.trim().toLowerCase();
+    var sch = state.contactSchool;
+    return (state.data.contacts || []).filter(function (ct) {
+      if (!contactMatches(ct, state.contactFilter)) return false;
+      if (sch && ct.school !== sch) return false;
+      if (q && (ct.name + ' ' + ct.title + ' ' + ct.email + ' ' + ct.phone + ' ' + ct.school + ' ' + ct.role).toLowerCase().indexOf(q) === -1) return false;
+      return true;
+    });
+  }
+
+  function schoolsWithoutContact() {
+    var covered = {};
+    (state.data.contacts || []).forEach(function (ct) { if (ct.status === 'Active') covered[ct.school.toLowerCase()] = true; });
+    var q = state.contactSearch.trim().toLowerCase();
+    return state.data.schools.filter(function (s) {
+      return !covered[s.name.toLowerCase()] && (!q || s.name.toLowerCase().indexOf(q) !== -1) && (!state.contactSchool || s.name === state.contactSchool);
+    });
+  }
+
+  function contactResults() {
+    var mgr = isManager();
+    if (state.contactFilter === 'missing') {
+      var miss = schoolsWithoutContact();
+      return '<section class="card" style="gap:0">' + (miss.length ? miss.map(function (s) {
+        return '<div class="rowlink"><span class="tag">' + esc(initials(s.name)) + '</span><span class="t"><a href="' + schoolHref(s.name) + '" style="color:var(--ink);text-decoration:none"><b>' + esc(s.name) + '</b></a><span>No active contact on file</span></span>' +
+          (mgr ? '<button type="button" class="btn sm" data-action="add-contact" data-school="' + esc(s.name) + '">' + icon('plus', 15, 2) + 'Add contact</button>' : '') + '</div>';
+      }).join('') : '<div class="empty">Every school has at least one active contact.</div>') + '</section>';
+    }
+    var list = filteredContacts();
+    var emails = list.filter(function (c) { return c.email; }).length;
+    var rows = list.length ? list.map(function (ct) {
+      return '<tr' + (ct.status === 'Inactive' ? ' style="opacity:.6"' : '') + '><td><div class="namecell"><div class="avatar" aria-hidden="true">' + esc(initials(ct.name)) + '</div><div style="display:flex;flex-direction:column;gap:2px;min-width:0"><b>' + esc(ct.name) + '</b>' +
+        (ct.title ? '<span class="small muted">' + esc(ct.title) + '</span>' : '') + (ct.review ? '<span class="small" style="color:var(--warn)">' + icon('alert', 12, 2.2) + ' ' + esc(ct.review) + '</span>' : '') + '</div></div></td>' +
+        '<td><a class="plain" href="' + schoolHref(ct.school) + '">' + esc(ct.school) + '</a></td>' +
+        '<td><span class="badge sm ' + (ROLE_CLASS[ct.role] || 'b-mute') + '">' + esc(ct.role) + '</span></td>' +
+        '<td>' + (ct.email ? reachLine('mail', ct.email) : '<span class="muted small">None</span>') + '</td>' +
+        '<td>' + (ct.phone ? reachLine('phone', ct.phone) : '<span class="muted small">None</span>') + '</td>' +
+        '<td style="text-align:right">' + (mgr ? '<button type="button" class="btn sm" data-action="edit-contact" data-id="' + esc(ct.id) + '">' + icon('pencil', 14, 2) + 'Edit</button>' : '') + '</td></tr>';
+    }).join('') : '<tr><td colspan="6"><div class="empty">No contacts match.</div></td></tr>';
+    return '<section class="tablecard" aria-label="Contacts"><div class="scroll"><table>' +
+      '<thead><tr><th scope="col">Name</th><th scope="col">School</th><th scope="col">Role</th><th scope="col">Email</th><th scope="col">Phone</th><th scope="col"><span class="sr-only">Edit</span></th></tr></thead>' +
+      '<tbody>' + rows + '</tbody></table></div>' +
+      '<div class="tfoot"><span>' + list.length + ' contact' + (list.length === 1 ? '' : 's') + '</span>' +
+      (emails ? '<button type="button" class="btn sm" data-action="copy-emails">' + icon('copy', 14, 2) + 'Copy ' + emails + ' email' + (emails === 1 ? '' : 's') + '</button>' : '') + '</div></section>';
+  }
+
+  function viewContacts() {
+    var d = state.data;
+    var mgr = isManager();
+    var all = d.contacts || [];
+    var active = all.filter(function (c) { return c.status === 'Active'; });
+    var review = active.filter(function (c) { return c.review; }).length;
+    var missing = schoolsWithoutContactAll();
+    var covered = d.schools.length - missing;
+    var names = {};
+    d.schools.forEach(function (s) { names[s.name] = true; });
+    all.forEach(function (c) { names[c.school] = true; });
+    var opts = Object.keys(names).sort().map(function (n) { return '<option value="' + esc(n) + '"' + (n === state.contactSchool ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('');
+    var pills = CONTACT_FILTERS.filter(function (f) { return mgr || !f.mgr; }).map(function (f) {
+      var n = f.key === 'missing' ? missing : all.filter(function (c) { return contactMatches(c, f.key); }).length;
+      return '<button type="button" class="pill" data-cfilter="' + f.key + '" aria-pressed="' + (state.contactFilter === f.key) + '">' + esc(f.label) + ' · ' + n + '</button>';
+    }).join('');
+    var kpis = [
+      { label: 'Active contacts', value: active.length, f: 'all' },
+      { label: 'Schools covered', value: covered + ' of ' + d.schools.length, f: 'all' },
+      { label: 'Schools with no contact', value: missing, f: 'missing' }
+    ];
+    if (mgr) kpis.push({ label: 'Needs review', value: review, f: 'review' });
+    return '<header class="pagehead"><div class="titles"><h1 class="h1">Contacts</h1><p class="sub">Everyone we work with at ' + (mgr ? 'our partner schools' : 'your schools') + '. Click the copy icon next to any email or phone number.</p></div>' +
+      (mgr ? '<button type="button" class="btn primary" data-action="add-contact">' + icon('plus', 16, 2) + 'Add contact</button>' : '') + '</header>' +
+      '<section class="kpis" aria-label="Contact summary">' + kpis.map(function (k) {
+        return '<button type="button" class="kpi kpibtn" data-cfilter="' + k.f + '"><span class="label">' + esc(k.label) + '</span><span class="value">' + esc(k.value) + '</span></button>';
+      }).join('') + '</section>' +
+      '<div class="row" style="justify-content:space-between;align-items:flex-end"><div class="row" role="group" aria-label="Contact filters">' + pills + '</div>' +
+      '<div class="row" style="gap:10px"><div class="field" style="width:240px;max-width:100%"><label for="contact-school" class="sr-only">School</label><select id="contact-school"><option value="">All schools</option>' + opts + '</select></div>' +
+      '<div class="field" style="width:240px;max-width:100%"><label for="contact-search" class="sr-only">Search contacts</label><input id="contact-search" type="search" placeholder="Search name, email, title" value="' + esc(state.contactSearch) + '" autocomplete="off"></div></div></div>' +
+      '<div id="contact-results">' + contactResults() + '</div>';
+  }
+
+  function schoolsWithoutContactAll() {
+    var covered = {};
+    (state.data.contacts || []).forEach(function (ct) { if (ct.status === 'Active') covered[ct.school.toLowerCase()] = true; });
+    return state.data.schools.filter(function (s) { return !covered[s.name.toLowerCase()]; }).length;
+  }
+
+  function repaintContacts() {
+    var box = $('#contact-results');
+    if (box) box.innerHTML = contactResults();
+    document.querySelectorAll('[data-cfilter]').forEach(function (b) {
+      if (b.classList.contains('pill')) b.setAttribute('aria-pressed', String(b.getAttribute('data-cfilter') === state.contactFilter));
+    });
+  }
+
+  function currentSchoolName() {
+    var route = parseRoute();
+    return route.name === 'school' ? route.school : '';
+  }
+
+  function openContactModal(ct, presetSchool) {
+    if (!isManager()) return;
+    closePalette();
+    var d = state.data;
+    var roles = d.contactRoles || ['Primary', 'Secondary', 'Housing', 'Billing', 'Other'];
+    var school = ct ? ct.school : (presetSchool || '');
+    var names = {};
+    d.schools.forEach(function (s) { names[s.name] = true; });
+    (d.contacts || []).forEach(function (c) { names[c.school] = true; });
+    var v = ct || { role: 'Primary', name: '', title: '', email: '', phone: '', status: 'Active' };
+    state.modal = true;
+    $('#palette-root').innerHTML = '<div class="overlay" data-action="modal-bg"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="cm-h">' +
+      '<div class="card-head"><h2 id="cm-h" style="font-family:var(--display);font-size:20px;font-weight:800">' + (ct ? 'Edit contact' : 'Add a contact') + '</h2>' +
+      '<button type="button" class="copybtn" data-action="close-modal" aria-label="Close">' + icon('x', 18, 2) + '</button></div>' +
+      '<form class="form" id="contact-modal-form" data-id="' + esc(ct ? ct.id : '') + '" novalidate>' +
+      (ct && ct.review ? '<div class="reviewnote" style="margin:0"><b>Flagged for review:</b> ' + esc(ct.review) + '<label class="checkline"><input type="checkbox" name="reviewed"> Mark as reviewed</label></div>' : '') +
+      '<div class="fields">' +
+      '<div class="field full"><label for="m-school">School</label><input id="m-school" name="school" list="m-schools" required autocomplete="off" value="' + esc(school) + '"><datalist id="m-schools">' + Object.keys(names).sort().map(function (n) { return '<option value="' + esc(n) + '"></option>'; }).join('') + '</datalist></div>' +
+      '<div class="field"><label for="m-name">Name</label><input id="m-name" name="name" required maxlength="120" value="' + esc(v.name) + '"></div>' +
+      '<div class="field"><label for="m-role">Role</label><select id="m-role" name="role">' + roles.map(function (r) { return '<option' + (r === v.role ? ' selected' : '') + '>' + esc(r) + '</option>'; }).join('') + '</select></div>' +
+      '<div class="field full"><label for="m-title">Title or department <span class="muted" style="font-weight:400">(optional)</span></label><input id="m-title" name="title" maxlength="160" value="' + esc(v.title) + '"></div>' +
+      '<div class="field"><label for="m-email">Email</label><input id="m-email" name="email" type="email" maxlength="200" value="' + esc(v.email) + '"></div>' +
+      '<div class="field"><label for="m-phone">Phone</label><input id="m-phone" name="phone" type="tel" maxlength="60" value="' + esc(v.phone) + '"></div>' +
+      (ct ? '<div class="field"><label for="m-status">Status</label><select id="m-status" name="status"><option' + (v.status !== 'Inactive' ? ' selected' : '') + '>Active</option><option' + (v.status === 'Inactive' ? ' selected' : '') + '>Inactive</option></select></div>' : '') +
+      '</div><div class="formfoot" style="border:0;padding:0"><span class="small muted">' + (ct ? 'Every change is kept in the school\'s contact history.' : 'Add an email, a phone number, or both.') + '</span>' +
+      '<button type="submit" class="btn primary">' + (ct ? 'Save contact' : icon('plus', 16, 2) + 'Add contact') + '</button></div></form></div></div>';
+    var first = $(school ? '#m-name' : '#m-school');
+    if (first) first.focus();
+  }
+
+  function closeModal() {
+    if (!state.modal) return;
+    state.modal = false;
+    $('#palette-root').innerHTML = '';
+  }
+
+  /* ---------------------------------------------------------------- */
   /* Command palette (Ctrl+K)                                         */
   /* ---------------------------------------------------------------- */
 
@@ -925,6 +1193,12 @@
         items.push({ group: 'Schools', tag: initials(s.name), label: s.name, sub: bits.join(' · ') || s.products.map(function (p) { return p.label; }).join(', '), href: schoolHref(s.name), words: s.products.map(function (p) { return p.label; }).join(' ') });
       });
     }
+    if (r !== 'School Admin') {
+      (d.contacts || []).forEach(function (ct) {
+        if (ct.status !== 'Active') return;
+        items.push({ group: 'People', tag: initials(ct.name), label: ct.name, sub: [ct.role, ct.title, ct.school].filter(Boolean).join(' · '), href: schoolHref(ct.school) + '?contact=' + encodeURIComponent(ct.id), words: ct.email + ' ' + ct.phone, contactSchool: ct.school });
+      });
+    }
     d.schools.forEach(function (s) {
       ['cm', 'delivery', 'collection'].forEach(function (t) {
         var u = safeUrl(s[LOG_FIELD[t]]);
@@ -934,6 +1208,8 @@
     if (r === 'Manager') {
       items.push({ group: 'Go to', tag: icon('home', 16), label: 'Home', sub: 'Season, health and renewals', href: '#/', raw: true });
       items.push({ group: 'Go to', tag: icon('school', 16), label: 'Schools', sub: 'The full directory', href: '#/schools', raw: true });
+      items.push({ group: 'Go to', tag: icon('users', 16), label: 'Contacts', sub: 'Everyone we work with at each school', href: '#/contacts', raw: true });
+      items.push({ group: 'Actions', tag: icon('plus', 16), label: 'Add a contact', sub: 'Contacts', action: 'add-contact', raw: true });
       items.push({ group: 'Go to', tag: icon('file', 16), label: 'Contracts', sub: 'Add or review contracts', href: '#/contracts', raw: true });
       items.push({ group: 'Actions', tag: icon('plus', 16), label: 'Add a contract', sub: 'Contracts', href: '#/contracts', raw: true });
       items.push({ group: 'Actions', tag: icon('refresh', 16), label: 'Refresh the directory', sub: 'Re-read logs, inventory and contracts', action: 'refresh', raw: true });
@@ -947,7 +1223,7 @@
     if (!state.data || state.palette.open) return;
     state.palette = { open: true, query: '', index: 0, items: [] };
     $('#palette-root').innerHTML = '<div class="overlay" data-action="palette-bg"><div class="palette" role="dialog" aria-modal="true" aria-label="Search Pangia">' +
-      '<div class="q">' + icon('search', 22, 2) + '<label for="pal-q" class="sr-only">Search Pangia</label><input id="pal-q" type="text" autocomplete="off" spellcheck="false" placeholder="Search schools, logs or actions" role="combobox" aria-expanded="true" aria-controls="pal-list"><kbd>Esc</kbd></div>' +
+      '<div class="q">' + icon('search', 22, 2) + '<label for="pal-q" class="sr-only">Search Pangia</label><input id="pal-q" type="text" autocomplete="off" spellcheck="false" placeholder="Search schools, people, logs or actions" role="combobox" aria-expanded="true" aria-controls="pal-list"><kbd>Esc</kbd></div>' +
       '<div class="results" id="pal-list" role="listbox"></div>' +
       '<div class="foot"><span><kbd>↑ ↓</kbd> move</span><span><kbd>Enter</kbd> open</span><span><kbd>Ctrl K</kbd> anywhere in Pangia</span></div></div></div>';
     paintPalette();
@@ -964,11 +1240,11 @@
     var q = state.palette.query.trim().toLowerCase();
     var all = paletteItems();
     var hits = all.filter(function (it) {
-      if (!q) return it.group !== 'Logs';
+      if (!q) return it.group !== 'Logs' && it.group !== 'People';
       var hay = (it.label + ' ' + (it.sub || '') + ' ' + (it.words || '')).toLowerCase();
       return q.split(/\s+/).every(function (w) { return hay.indexOf(w) !== -1; });
     });
-    var groups = ['Schools', 'Go to', 'Logs', 'Actions'];
+    var groups = ['Schools', 'People', 'Go to', 'Logs', 'Actions'];
     var flat = [];
     var html = '';
     groups.forEach(function (g) {
@@ -1010,6 +1286,27 @@
     if (name === 'retry') return boot();
     if (name === 'palette') return openPalette();
     if (name === 'no-log') return toast('This log is not connected yet.');
+    if (name === 'copy' && el) {
+      var val = el.getAttribute('data-copy') || '';
+      if (navigator.clipboard) navigator.clipboard.writeText(val).then(function () { toast('Copied ' + val.split('\n')[0]); }, function () { toast(val); });
+      else toast(val);
+      return;
+    }
+    if (name === 'copy-emails') {
+      var list = filteredContacts().map(function (c) { return c.email; }).filter(Boolean);
+      var joined = list.filter(function (x, i) { return list.indexOf(x) === i; }).join(', ');
+      if (navigator.clipboard) navigator.clipboard.writeText(joined).then(function () { toast(list.length + ' emails copied'); }, function () { toast(joined); });
+      else toast(joined);
+      return;
+    }
+    if (name === 'add-contact') return openContactModal(null, (el && el.getAttribute('data-school')) || currentSchoolName() || state.contactSchool);
+    if (name === 'edit-contact' && el) {
+      var id = el.getAttribute('data-id');
+      var ct = (state.data.contacts || []).filter(function (c) { return c.id === id; })[0];
+      if (ct) openContactModal(ct);
+      return;
+    }
+    if (name === 'close-modal') return closeModal();
     if (name === 'copy-link') {
       var text = location.href;
       if (navigator.clipboard) navigator.clipboard.writeText(text).then(function () { toast('Link copied'); }, function () { toast(text); });
@@ -1058,10 +1355,16 @@
     var pal = e.target.closest('[data-pal]');
     if (pal) { e.preventDefault(); return runPaletteItem(Number(pal.getAttribute('data-pal'))); }
     if (e.target.matches('[data-action="palette-bg"]')) return closePalette();
+    if (e.target.matches('[data-action="modal-bg"]')) return closeModal();
     var act = e.target.closest('[data-action]');
-    if (act && act.getAttribute('data-action') !== 'palette-bg') {
+    if (act && act.getAttribute('data-action') !== 'palette-bg' && act.getAttribute('data-action') !== 'modal-bg') {
       e.preventDefault();
       return doAction(act.getAttribute('data-action'), act);
+    }
+    var cf = e.target.closest('[data-cfilter]');
+    if (cf) {
+      state.contactFilter = cf.getAttribute('data-cfilter');
+      return repaintContacts();
     }
     var f = e.target.closest('[data-filter]');
     if (f) {
@@ -1077,6 +1380,9 @@
       state.search = e.target.value;
       var rows = $('#school-rows');
       if (rows) rows.innerHTML = schoolRows();
+    } else if (e.target.id === 'contact-search') {
+      state.contactSearch = e.target.value;
+      repaintContacts();
     } else if (e.target.id === 'log-search') {
       state.logSearch = e.target.value;
       var lr = $('#log-rows');
@@ -1088,8 +1394,38 @@
     }
   });
 
+  document.addEventListener('change', function (e) {
+    if (e.target.id === 'contact-school') {
+      state.contactSchool = e.target.value;
+      repaintContacts();
+    }
+  });
+
   document.addEventListener('submit', function (e) {
     var form = e.target;
+    if (form.id === 'contact-modal-form') {
+      e.preventDefault();
+      var el = form.elements;
+      var cp = { id: form.getAttribute('data-id'), school: el.school.value.trim(), role: el.role.value, name: el.name.value.trim(), title: el.title.value.trim(),
+        email: el.email.value.trim(), phone: el.phone.value.trim(), status: el.status ? el.status.value : 'Active', reviewed: !!(el.reviewed && el.reviewed.checked) };
+      if (!cp.school) { toast('Pick a school for this contact.', true); return; }
+      if (!cp.name) { toast('Enter the contact\'s name.', true); return; }
+      if (cp.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cp.email)) { toast('Please enter a valid email address.', true); return; }
+      if (!cp.email && !cp.phone) { toast('Add an email or a phone number.', true); return; }
+      var mb = form.querySelector('[type="submit"]');
+      mb.disabled = true; mb.textContent = 'Saving...';
+      api('saveContact', cp).then(function (res) {
+        state.data.contacts = res.contacts;
+        if (res.school) state.schoolCache[cp.school] = res.school;
+        closeModal();
+        toast(!res.changed ? 'No changes to save.' : cp.id ? 'Contact saved. The change is in the history.' : 'Contact added');
+        renderRoute();
+      }).catch(function (err) {
+        mb.disabled = false; mb.textContent = cp.id ? 'Save contact' : 'Add contact';
+        if (err.code !== 'auth_expired') toast(err.message, true);
+      });
+      return;
+    }
     if (form.id === 'reg-form') {
       e.preventDefault();
       var values = {};
@@ -1142,9 +1478,11 @@
   document.addEventListener('keydown', function (e) {
     if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
       e.preventDefault();
+      closeModal();
       if (state.palette.open) closePalette(); else openPalette();
       return;
     }
+    if (state.modal && e.key === 'Escape') { e.preventDefault(); closeModal(); return; }
     if (!state.palette.open) return;
     if (e.key === 'Escape') { e.preventDefault(); closePalette(); }
     else if (e.key === 'ArrowDown') { e.preventDefault(); state.palette.index = Math.min(state.palette.index + 1, state.palette.items.length - 1); paintPalette(); }
