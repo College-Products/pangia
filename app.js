@@ -101,8 +101,19 @@
   }
   function logo(size, light) {
     var s = size || 34;
-    return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="10" fill="' + (light ? '#FFFFFF' : '#054D80') + '"></rect><circle cx="17" cy="17" r="9" fill="none" stroke="' + (light ? '#054D80' : '#FFFFFF') + '" stroke-width="2.2"></circle><path d="M10 14.5c2.6 1.4 4.8.3 7-1.5 2.2 1.8 4.4 2.9 7 1.5M11 21c2-1 4-.6 6 .6" fill="none" stroke="#80BC41" stroke-width="2.2" stroke-linecap="round"></path></svg>';
+    var bg = light ? '#FFFFFF' : '#054D80';
+    var fg = light ? '#054D80' : '#FFFFFF';
+    var line = ' fill="none" stroke="' + fg + '" stroke-linecap="round" stroke-linejoin="round"';
+    return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 34 34" aria-hidden="true">' +
+      '<rect width="34" height="34" rx="10" fill="' + bg + '"></rect>' +
+      '<path d="M26.4 9.6A12.2 12.2 0 1 1 20.6 5.3"' + line + ' stroke-width="1.6"></path>' +
+      '<circle cx="24.4" cy="6.9" r="2.2" fill="#80BC41"></circle>' +
+      '<g transform="translate(17 16.4) scale(.84) translate(-17 -16.6)">' +
+      '<path d="M14.7 11.2 9.6 18.7h6.6M14.7 11.2v10.9"' + line + ' stroke-width="2.5"></path>' +
+      '<path d="M18.6 14.1a3 3 0 0 1 6 0c0 2.9-6 4.9-6 8h6.3"' + line + ' stroke-width="2.5"></path></g>' +
+      '<path d="M11.4 24.6c1.9.8 3.8.8 5.6 0s3.8-.8 5.6 0" fill="none" stroke="#80BC41" stroke-width="1.9" stroke-linecap="round"></path></svg>';
   }
+
   function ring(score, size) {
     var sz = size || 44;
     var has = typeof score === 'number';
