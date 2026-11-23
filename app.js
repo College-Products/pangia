@@ -14,6 +14,8 @@
     contactSearch: '',
     contactSchool: '',
     modal: false,
+    map: null,
+    mapObj: null,
     palette: { open: false, query: '', index: 0, items: [] }
   };
 
@@ -60,6 +62,14 @@
   function schoolHref(name) { return '#/school/' + encodeURIComponent(name); }
   function role() { return state.data ? state.data.user.role : ''; }
   function isManager() { return role() === 'Manager'; }
+  var TEAM_ROLES = ['Customer Success', 'Sales', 'Finance', 'On-Field'];
+  function isTeam() { return TEAM_ROLES.indexOf(role()) !== -1; }
+  function can(cap) {
+    if (isManager()) return true;
+    var caps = (state.data && state.data.caps) || [];
+    return caps.indexOf(cap) !== -1;
+  }
+  function norm(s) { return String(s || '').toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]/g, ''); }
 
   /* ---------------------------------------------------------------- */
   /* Icons                                                            */
@@ -94,7 +104,11 @@
     phone: 'M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z',
     pin: 'M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21zM12 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
     globe: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18',
-    x: 'M6 6l12 12M18 6L6 18'
+    x: 'M6 6l12 12M18 6L6 18',
+    map: 'M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14',
+    box: 'M21 8l-9-5-9 5v8l9 5 9-5V8zM3 8l9 5 9-5M12 13v8',
+    key: 'M15 7a4 4 0 1 1-3.5 6L4 20.5 3.5 18 5 16.5 6.5 18 8 16.5 6.5 15l4.9-4.9A4 4 0 0 1 15 7zM16 8h.01',
+    dir: 'M12 2l8 8-8 8-8-8 8-8zM9 11h4V9l3 3-3 3v-2H10v2'
   };
   function icon(name, size, stroke) {
     return '<svg class="i" width="' + (size || 18) + '" height="' + (size || 18) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + (stroke || 1.8) + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + PATHS[name] + '"></path></svg>';
@@ -211,6 +225,7 @@
     try { localStorage.setItem('pangia_theme', dark ? 'dark' : 'light'); } catch (e) { /* private mode */ }
     var btn = $('[data-action="theme"]');
     if (btn) { btn.innerHTML = icon(dark ? 'sun' : 'moon'); btn.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode'); }
+    if (state.mapObj) setMapTiles();
   }
   function toast(msg, isErr) {
     var root = $('#toast-root');
@@ -386,27 +401,27 @@
     var u = d.user;
     var r = route.name;
     var nav = '';
-    if (u.role === 'Manager') {
+    var invLink = d.inventoryDashboardUrl ? '<a href="' + esc(safeUrl(d.inventoryDashboardUrl)) + '" target="_blank" rel="noopener">' + icon('layers') + '<span class="grow">Inventory</span>' + icon('ext', 14) + '</a>' : '';
+    var logNav = '<span class="nav-label">Logs</span>' +
+      navLink('#/logs/cm', 'cm', 'CM Logs', route.type === 'cm', u.role === 'Campus Manager' && d.schools.reduce(function (a, s) { return a + (s.openTasks || 0); }, 0) ? '<span class="count">' + d.schools.reduce(function (a, s) { return a + (s.openTasks || 0); }, 0) + '</span>' : '') +
+      navLink('#/logs/delivery', 'delivery', 'Delivery Logs', route.type === 'delivery') +
+      navLink('#/logs/collection', 'collection', 'Collection Logs', route.type === 'collection');
+    if (u.role === 'Manager' || isTeam()) {
       var renewCount = d.schools.filter(function (s) { return s.contract && s.contract.status === 'Renewing soon'; }).length;
-      var reviewCount = (d.contacts || []).filter(function (ct) { return ct.review && ct.status === 'Active'; }).length;
+      var reviewCount = can('contacts.review') ? (d.contacts || []).filter(function (ct) { return ct.review && ct.status === 'Active'; }).length : 0;
       nav = navLink('#/', 'home', 'Home', r === 'home') +
         '<span class="nav-label">Directory</span>' +
         navLink('#/schools', 'school', 'Schools', r === 'schools' || r === 'school') +
-        navLink('#/contacts', 'users', 'Contacts', r === 'contacts', reviewCount ? '<span class="count">' + reviewCount + '</span>' : '') +
-        navLink('#/contracts', 'file', 'Contracts', r === 'contracts', renewCount ? '<span class="count">' + renewCount + '</span>' : '') +
-        (d.inventoryDashboardUrl ? '<a href="' + esc(safeUrl(d.inventoryDashboardUrl)) + '" target="_blank" rel="noopener">' + icon('layers') + '<span class="grow">Inventory</span>' + icon('ext', 14) + '</a>' : '') +
-        '<span class="nav-label">Logs</span>' +
-        navLink('#/logs/cm', 'cm', 'CM Logs', route.type === 'cm') +
-        navLink('#/logs/delivery', 'delivery', 'Delivery Logs', route.type === 'delivery') +
-        navLink('#/logs/collection', 'collection', 'Collection Logs', route.type === 'collection');
+        (can('contacts') ? navLink('#/contacts', 'users', 'Contacts', r === 'contacts', reviewCount ? '<span class="count">' + reviewCount + '</span>' : '') : '') +
+        (can('contract.docs') ? navLink('#/contracts', 'file', 'Contracts', r === 'contracts', renewCount ? '<span class="count">' + renewCount + '</span>' : '') : '') +
+        (can('map') ? navLink('#/map', 'map', 'Map', r === 'map') : '') +
+        invLink +
+        (can('logs') ? logNav : '');
     } else if (u.role === 'Campus Manager') {
-      var tasks = d.schools.reduce(function (a, s) { return a + (s.openTasks || 0); }, 0);
       nav = navLink('#/', 'school', 'My schools', r === 'home' || r === 'school') +
-        navLink('#/contacts', 'users', 'Contacts', r === 'contacts') +
-        '<span class="nav-label">Logs</span>' +
-        navLink('#/logs/cm', 'cm', 'CM Logs', route.type === 'cm', tasks ? '<span class="count">' + tasks + '</span>' : '') +
-        navLink('#/logs/delivery', 'delivery', 'Delivery Logs', route.type === 'delivery') +
-        navLink('#/logs/collection', 'collection', 'Collection Logs', route.type === 'collection');
+        (can('contacts') ? navLink('#/contacts', 'users', 'Contacts', r === 'contacts') : '') +
+        (can('map') ? navLink('#/map', 'map', 'Map', r === 'map') : '') +
+        logNav;
     } else {
       var s0 = d.schools[0] || {};
       nav = navLink('#/', 'pencil', 'My school', r === 'home') +
@@ -455,9 +470,10 @@
     var parts = h.split('/');
     if (parts[0] === 'school' && parts[1]) return { name: 'school', school: decodeURIComponent(parts.slice(1).join('/')), query: query };
     if (parts[0] === 'logs' && LOG_NAMES[parts[1]]) return { name: 'logs', type: parts[1], query: query };
-    if (parts[0] === 'schools' && isManager()) return { name: 'schools', query: query };
-    if (parts[0] === 'contracts' && isManager()) return { name: 'contracts', query: query };
-    if (parts[0] === 'contacts' && role() !== 'School Admin') return { name: 'contacts', query: query };
+    if (parts[0] === 'schools' && can('directory')) return { name: 'schools', query: query };
+    if (parts[0] === 'contracts' && can('contract.docs')) return { name: 'contracts', query: query };
+    if (parts[0] === 'contacts' && can('contacts')) return { name: 'contacts', query: query };
+    if (parts[0] === 'map' && can('map')) return { name: 'map', query: query };
     return { name: 'home', query: query };
   }
 
@@ -465,6 +481,7 @@
     if (!state.data) return;
     closePalette();
     closeModal();
+    destroyMap();
     var route = parseRoute();
     var r = role();
     var html;
@@ -476,13 +493,16 @@
       if (route.query.filter) state.contactFilter = route.query.filter;
       html = viewContacts();
     }
-    else if (route.name === 'logs' && r !== 'School Admin') html = viewLogs(route.type);
+    else if (route.name === 'logs' && can('logs')) html = viewLogs(route.type);
+    else if (route.name === 'map') html = viewMap(route.query);
     else if (r === 'Manager') html = viewManagerHome();
+    else if (isTeam()) html = viewTeamHome();
     else if (r === 'Campus Manager') html = viewCampusHome();
     else html = viewAdminHome();
     renderShell(route, html);
     window.scrollTo(0, 0);
     if (route.name === 'school' && r !== 'School Admin') loadSchool(route.school);
+    if (route.name === 'map') initMap(route.query);
   }
 
   /* ---------------------------------------------------------------- */
@@ -650,7 +670,8 @@
   function viewSchoolShell(name) {
     var s = state.data.schools.filter(function (x) { return x.name === name; })[0];
     if (!s) return '<div class="empty">That school was not found, or it isn\'t assigned to you. <a href="#/">Go home</a></div>';
-    var back = isManager() ? '<a href="#/schools">Schools</a>' : '<a href="#/">My schools</a>';
+    var back = can('directory') ? '<a href="#/schools">Schools</a>' : '<a href="#/">My schools</a>';
+    var pin = can('map') && (state.data.locations || []).some(function (l) { return norm(l.school) === norm(s.name); });
     var chips = contractBadge(s.contract) + (s.contract && s.contract.type ? '<span class="badge b-mute">' + esc(s.contract.type) + '</span>' : '') +
       (s.contractOnly ? '<span class="badge b-mute">No CM Log</span>' : '') +
       s.products.map(function (p) { return '<span class="badge b-info">' + esc(p.label) + '</span>'; }).join('');
@@ -659,6 +680,7 @@
       '<header class="schoolhead"><div class="who"><div class="bigmark" aria-hidden="true">' + esc(initials(s.name)) + '</div>' +
       '<div style="display:flex;flex-direction:column;gap:8px"><h1 class="h1">' + esc(s.name) + '</h1><div class="row" style="gap:8px">' + chips + '</div></div></div>' +
       '<div class="row"><button type="button" class="btn" data-action="copy-link">' + icon('link', 16, 2) + 'Copy link</button>' +
+      (pin ? '<a class="btn" href="#/map?school=' + encodeURIComponent(s.name) + '">' + icon('map', 16, 2) + 'Show on map</a>' : '') +
       (isManager() ? '<a class="btn" href="#/contracts?school=' + encodeURIComponent(s.name) + '">' + icon('plus', 16, 2) + 'Add contract</a>' : '') +
       (cm ? '<a class="btn primary" href="' + esc(cm) + '" target="_blank" rel="noopener">Open CM Log' + icon('ext', 16, 2) + '</a>' : '') + '</div></header>' +
       '<div id="school-body"><div class="grid"><div class="skel" style="height:240px"></div><div class="skel" style="height:240px"></div><div class="skel" style="height:240px"></div></div></div>';
@@ -684,6 +706,8 @@
     if (!body) return;
     var s = res.school;
     var mgr = isManager();
+    var dates = can('contract.dates');
+    var docs = can('contract.docs');
     var h = s.health || { score: null, contract: 0, stock: 0, tasks: 0 };
 
     var health = '<section class="card" aria-labelledby="h-h"><h2 id="h-h">Health score</h2><div class="row" style="gap:20px;flex-wrap:nowrap">' + ring(h.score, 112) +
@@ -708,11 +732,11 @@
       };
       var live = c.status === 'Active' || c.status === 'Renewing soon';
       contract = '<section class="card"><div class="card-head"><h2>Contract</h2>' + contractBadge(c) + '</div>' +
-        (mgr ? '<div class="dates"><div><span class="muted">Start</span><b>' + esc(fmtDate(c.start)) + '</b></div><div style="text-align:right"><span class="muted">End</span><b>' + esc(fmtDate(c.end)) + '</b></div></div>' +
+        (dates ? '<div class="dates"><div><span class="muted">Start</span><b>' + esc(fmtDate(c.start)) + '</b></div><div style="text-align:right"><span class="muted">End</span><b>' + esc(fmtDate(c.end)) + '</b></div></div>' +
           '<div class="track lg"><div style="width:' + Math.round(pct * 100) + '%;background:var(--accent)"></div></div>' : '<div class="dates"><div><span class="muted">Ends</span><b>' + esc(fmtDate(c.end)) + '</b></div></div>') +
         (live && r60 ? '<div class="steps">' + step(c.daysLeft <= 60, '60-day reminder', fmtDate(r60.toISOString(), { month: 'short', day: 'numeric' })) + step(c.daysLeft <= 30, '30-day reminder', fmtDate(r30.toISOString(), { month: 'short', day: 'numeric' })) + '</div>' : '') +
-        (mgr && c.note && /blank|not signed|no start/i.test(c.note) ? '<div class="badge b-warn" style="white-space:normal;align-self:flex-start">' + icon('alert', 14, 2) + 'Confirm: ' + esc(c.note.split('.')[0]) + '</div>' : '') +
-        (mgr && safeUrl(c.pdf) ? '<a class="rowlink" style="margin:0;border:1px solid var(--border)" href="' + esc(safeUrl(c.pdf)) + '" target="_blank" rel="noopener">' + icon('file') + '<span class="t"><b style="font-size:14px">Signed contract</b></span><span class="small" style="color:var(--link);font-weight:600">View</span></a>' : '') +
+        (docs && c.note && /blank|not signed|no start/i.test(c.note) ? '<div class="badge b-warn" style="white-space:normal;align-self:flex-start">' + icon('alert', 14, 2) + 'Confirm: ' + esc(c.note.split('.')[0]) + '</div>' : '') +
+        (docs && safeUrl(c.pdf) ? '<a class="rowlink" style="margin:0;border:1px solid var(--border)" href="' + esc(safeUrl(c.pdf)) + '" target="_blank" rel="noopener">' + icon('file') + '<span class="t"><b style="font-size:14px">Signed contract</b></span><span class="small" style="color:var(--link);font-weight:600">View</span></a>' : '') +
         '</section>';
     }
 
@@ -739,11 +763,11 @@
     var editor = mgr ? '<section class="card span-all"><div class="card-head"><h2>Edit registered info</h2><span class="hint">School Admins can edit this too</span></div>' + regForm(s.name, res.registered, true) + '</section>' +
       '<section class="card span-all" style="gap:6px"><div class="card-head" style="margin-bottom:8px"><h2>Change history</h2><span class="hint">Every save is kept</span></div><div id="history">' + historyList(res.history) + '</div></section>' : '';
 
-    var contractsCard = mgr ? contractRecords(s.name, res) : '';
-    body.innerHTML = '<div class="grid">' + (s.health ? health : '') + contract + stock + contactsCard(s.name, res.contacts || [], res.contactHistory) + contractsCard + logs + profileCard(res.profile) + people + activity + reg + editor + '</div>';
+    var contractsCard = docs ? contractRecords(s.name, res, mgr) : '';
+    body.innerHTML = '<div class="grid">' + (s.health ? health : '') + contract + stock + contactsCard(s.name, res.contacts || [], res.contactHistory) + storageCard(s.name, res.storage, res.storageHistory) + contractsCard + (can('logs') || role() === 'Campus Manager' ? logs : '') + profileCard(res.profile) + people + activity + reg + editor + '</div>';
   }
 
-  function contractRecords(schoolName, res) {
+  function contractRecords(schoolName, res, editable) {
     var docs = res.docs || [];
     var rows = res.contracts || [];
     var hist = res.contractHistory || [];
@@ -758,14 +782,14 @@
         '<div class="card-head"><span style="display:flex;flex-direction:column;gap:3px"><b style="font-size:14px">' + esc(fmtDate(c.start, { month: 'short', year: 'numeric' })) + ' to ' + esc(fmtDate(c.end, { month: 'short', year: 'numeric' })) + '</b>' +
         '<span class="small muted">' + esc(c.type || 'Contract') + (c.note ? ' · ' + esc(c.note) : '') + '</span></span>' +
         '<span class="badge ' + (CONTRACT_CLASS[c.status] || 'b-mute') + '">' + esc(c.status) + '</span></div>' +
-        '<details><summary class="small" style="cursor:pointer;color:var(--link);font-weight:600">Edit this contract</summary>' +
+        (editable ? '<details><summary class="small" style="cursor:pointer;color:var(--link);font-weight:600">Edit this contract</summary>' +
         '<form class="form contract-edit" data-row="' + c.row + '" data-school="' + esc(schoolName) + '" style="margin-top:12px" novalidate><div class="fields">' +
         '<div class="field"><label for="ce-s-' + c.row + '">Start date</label><input id="ce-s-' + c.row + '" name="start" type="date" value="' + esc(c.start) + '" required></div>' +
         '<div class="field"><label for="ce-e-' + c.row + '">End date</label><input id="ce-e-' + c.row + '" name="end" type="date" value="' + esc(c.end) + '" required></div>' +
         '<div class="field"><label for="ce-t-' + c.row + '">Type</label><select id="ce-t-' + c.row + '" name="type"><option' + (c.type !== 'Lease' ? ' selected' : '') + '>Rental</option><option' + (c.type === 'Lease' ? ' selected' : '') + '>Lease</option></select></div>' +
         '<div class="field"><label for="ce-p-' + c.row + '">PDF link</label><input id="ce-p-' + c.row + '" name="pdf" type="url" value="' + esc(c.pdf) + '" placeholder="https://"></div>' +
         '<div class="field full"><label for="ce-n-' + c.row + '">Note</label><input id="ce-n-' + c.row + '" name="note" type="text" maxlength="300" value="' + esc(c.note) + '"></div>' +
-        '</div><div class="row" style="justify-content:flex-end"><button type="submit" class="btn primary sm">Save contract</button></div></form></details></div>';
+        '</div><div class="row" style="justify-content:flex-end"><button type="submit" class="btn primary sm">Save contract</button></div></form></details>' : '') + '</div>';
     }).join('') : '<div class="empty">No contract periods on file.</div>';
 
     var histHtml = hist.length ? hist.map(function (h) {
@@ -774,7 +798,7 @@
         '<span>' + esc(h.by) + ' · ' + esc(relTime(h.at)) + '</span></div></div>';
     }).join('') : '<div class="empty">No contract changes yet. Edits and new contracts are recorded here.</div>';
 
-    return '<section class="card span-all" aria-labelledby="cr-h"><div class="card-head"><h2 id="cr-h">Contract records</h2><span class="hint">Managers only</span></div>' +
+    return '<section class="card span-all" aria-labelledby="cr-h"><div class="card-head"><h2 id="cr-h">Contract records</h2><span class="hint">' + (editable ? 'Managers only' : 'View only') + '</span></div>' +
       '<div class="grid" style="gap:28px">' +
       '<div style="display:flex;flex-direction:column;gap:4px;min-width:0"><span class="legend-title" style="margin-bottom:6px">Signed documents · ' + docs.length + '</span>' + docHtml + '</div>' +
       '<div style="display:flex;flex-direction:column;min-width:0"><span class="legend-title" style="margin-bottom:6px">Contract periods</span>' + rowHtml + '</div>' +
@@ -925,6 +949,12 @@
       return a.name.localeCompare(b.name);
     });
     var opts = schools.map(function (s) { return '<option value="' + esc(s.name) + '"></option>'; }).join('');
+    if (!isManager()) {
+      return '<header class="pagehead"><div class="titles"><h1 class="h1">Contracts</h1><p class="sub">Contract status for every school, renewals first. Open a school to see its signed PDFs.</p></div></header>' +
+        '<section class="card" style="gap:0">' + sorted.map(function (s) {
+          return '<a class="rowlink" href="' + schoolHref(s.name) + '"><span class="t"><b>' + esc(s.name) + '</b><span>' + esc(contractNote(s.contract) || 'No contract on file') + '</span></span>' + contractBadge(s.contract) + '</a>';
+        }).join('') + '</section>';
+    }
     return '<header class="pagehead"><div class="titles"><h1 class="h1">Contracts</h1><p class="sub">Status comes from the dates, so it stays current on its own. Renewal reminders are emailed 60 and 30 days out.</p></div></header>' +
       '<div class="grid-2">' +
       '<section class="card" aria-labelledby="add-h"><h2 id="add-h">Add a contract</h2>' +
@@ -981,7 +1011,7 @@
   }
 
   function contactsCard(schoolName, contacts, hist) {
-    var mgr = isManager();
+    var mgr = can('contacts.edit');
     var list = contacts.slice().sort(function (a, b) { return (a.status === 'Inactive') - (b.status === 'Inactive'); });
     var active = list.filter(function (c) { return c.status === 'Active'; }).length;
     var histHtml = (mgr && hist && hist.length) ? '<details class="morebox"><summary>Contact changes · ' + hist.length + '</summary>' + hist.map(function (h) {
@@ -1038,8 +1068,8 @@
     { key: 'all', label: 'All', mgr: false },
     { key: 'primary', label: 'Primary', mgr: false },
     { key: 'other', label: 'Other roles', mgr: false },
-    { key: 'review', label: 'Needs review', mgr: true },
-    { key: 'inactive', label: 'Inactive', mgr: true },
+    { key: 'review', label: 'Needs review', mgr: true, cap: 'contacts.review' },
+    { key: 'inactive', label: 'Inactive', mgr: true, cap: 'contacts.edit' },
     { key: 'missing', label: 'Schools with no contact', mgr: false }
   ];
 
@@ -1073,7 +1103,7 @@
   }
 
   function contactResults() {
-    var mgr = isManager();
+    var mgr = can('contacts.edit');
     if (state.contactFilter === 'missing') {
       var miss = schoolsWithoutContact();
       return '<section class="card" style="gap:0">' + (miss.length ? miss.map(function (s) {
@@ -1101,7 +1131,7 @@
 
   function viewContacts() {
     var d = state.data;
-    var mgr = isManager();
+    var mgr = can('contacts.edit');
     var all = d.contacts || [];
     var active = all.filter(function (c) { return c.status === 'Active'; });
     var review = active.filter(function (c) { return c.review; }).length;
@@ -1111,7 +1141,7 @@
     d.schools.forEach(function (s) { names[s.name] = true; });
     all.forEach(function (c) { names[c.school] = true; });
     var opts = Object.keys(names).sort().map(function (n) { return '<option value="' + esc(n) + '"' + (n === state.contactSchool ? ' selected' : '') + '>' + esc(n) + '</option>'; }).join('');
-    var pills = CONTACT_FILTERS.filter(function (f) { return mgr || !f.mgr; }).map(function (f) {
+    var pills = CONTACT_FILTERS.filter(function (f) { return !f.cap || can(f.cap); }).map(function (f) {
       var n = f.key === 'missing' ? missing : all.filter(function (c) { return contactMatches(c, f.key); }).length;
       return '<button type="button" class="pill" data-cfilter="' + f.key + '" aria-pressed="' + (state.contactFilter === f.key) + '">' + esc(f.label) + ' · ' + n + '</button>';
     }).join('');
@@ -1120,8 +1150,8 @@
       { label: 'Schools covered', value: covered + ' of ' + d.schools.length, f: 'all' },
       { label: 'Schools with no contact', value: missing, f: 'missing' }
     ];
-    if (mgr) kpis.push({ label: 'Needs review', value: review, f: 'review' });
-    return '<header class="pagehead"><div class="titles"><h1 class="h1">Contacts</h1><p class="sub">Everyone we work with at ' + (mgr ? 'our partner schools' : 'your schools') + '. Click the copy icon next to any email or phone number.</p></div>' +
+    if (can('contacts.review')) kpis.push({ label: 'Needs review', value: review, f: 'review' });
+    return '<header class="pagehead"><div class="titles"><h1 class="h1">Contacts</h1><p class="sub">Everyone we work with at ' + (can('directory') ? 'our partner schools' : 'your schools') + '. Click the copy icon next to any email or phone number.</p></div>' +
       (mgr ? '<button type="button" class="btn primary" data-action="add-contact">' + icon('plus', 16, 2) + 'Add contact</button>' : '') + '</header>' +
       '<section class="kpis" aria-label="Contact summary">' + kpis.map(function (k) {
         return '<button type="button" class="kpi kpibtn" data-cfilter="' + k.f + '"><span class="label">' + esc(k.label) + '</span><span class="value">' + esc(k.value) + '</span></button>';
@@ -1152,7 +1182,7 @@
   }
 
   function openContactModal(ct, presetSchool) {
-    if (!isManager()) return;
+    if (!can('contacts.edit')) return;
     closePalette();
     var d = state.data;
     var roles = d.contactRoles || ['Primary', 'Secondary', 'Housing', 'Billing', 'Other'];
@@ -1188,6 +1218,396 @@
   }
 
   /* ---------------------------------------------------------------- */
+  /* Team home (Customer Success, Sales, Finance, On-Field)           */
+  /* ---------------------------------------------------------------- */
+
+  var TEAM_INFO = {
+    'Customer Success': 'Contacts, school details and logs, so every student and partner question gets a fast, right answer.',
+    'Sales': 'Partner contacts, contracts and renewals, all in one place.',
+    'Finance': 'Contracts, renewals and storage costs across every school.',
+    'On-Field': 'Storage locations, access codes, stock and open tasks for every campus.'
+  };
+
+  function kpiCard(label, value, href, note) {
+    return '<a class="kpi" href="' + href + '" style="text-decoration:none;color:var(--ink)"><span class="label">' + esc(label) + '</span><span class="value">' + esc(value) + '</span>' + (note ? '<span class="small muted">' + esc(note) + '</span>' : '') + '</a>';
+  }
+
+  function storageRateTotal(list) {
+    return list.reduce(function (a, st) { var n = parseFloat(String(st.rate || '').replace(/[^0-9.]/g, '')); return a + (isFinite(n) ? n : 0); }, 0);
+  }
+
+  function viewTeamHome() {
+    var d = state.data;
+    var r = role();
+    var schools = d.schools;
+    var renewals = schools.filter(function (s) { return s.contract && s.contract.status === 'Renewing soon'; }).sort(function (a, b) { return a.contract.daysLeft - b.contract.daysLeft; });
+    var storage = (d.storage || []).filter(function (st) { return st.status !== 'Closed'; });
+    var critical = schools.filter(function (s) { return s.stockStatus === 'Critical'; });
+    var tasks = schools.filter(function (s) { return s.openTasks; }).sort(function (a, b) { return b.openTasks - a.openTasks; });
+    var contacts = (d.contacts || []).filter(function (c) { return c.status === 'Active'; });
+    var review = contacts.filter(function (c) { return c.review; });
+    var missing = schoolsWithoutContactAll();
+    var kpis = '';
+    var main = '';
+    var schoolRow = function (s, sub, badge) { return '<a class="rowlink" href="' + schoolHref(s.name) + '"><span class="tag">' + esc(initials(s.name)) + '</span><span class="t"><b>' + esc(s.name) + '</b><span>' + esc(sub) + '</span></span>' + (badge || icon('chev')) + '</a>'; };
+    var listCard = function (title, hint, rows, empty) { return '<section class="card" style="gap:0"><div class="card-head" style="margin-bottom:8px"><h2>' + title + '</h2>' + (hint ? '<span class="hint">' + hint + '</span>' : '') + '</div>' + (rows || '<div class="empty">' + empty + '</div>') + '</section>'; };
+    var renewCard = listCard('Renewals in the next 90 days', 'Soonest first', renewals.map(function (s) { return schoolRow(s, 'Ends ' + fmtDate(s.contract.end) + ' · ' + s.contract.daysLeft + ' days left', contractBadge(s.contract)); }).join(''), 'No contracts end in the next 90 days.');
+
+    if (r === 'Customer Success') {
+      kpis = kpiCard('Active contacts', contacts.length, '#/contacts') + kpiCard('Contacts to review', review.length, '#/contacts?filter=review') + kpiCard('Schools with no contact', missing, '#/contacts?filter=missing') + kpiCard('Open CM tasks', tasks.reduce(function (a, s) { return a + s.openTasks; }, 0), '#/logs/cm');
+      main = listCard('Contacts to review', 'Flagged in the master sheet', review.map(function (ct) {
+        return '<a class="rowlink" href="' + schoolHref(ct.school) + '"><span class="tag">' + esc(initials(ct.name)) + '</span><span class="t"><b>' + esc(ct.name) + '</b><span>' + esc(ct.school) + ' · ' + esc(ct.review) + '</span></span>' + icon('chev') + '</a>';
+      }).join(''), 'Every contact has been reviewed.') +
+        listCard('Schools with open CM tasks', 'Most first', tasks.slice(0, 8).map(function (s) { return schoolRow(s, s.openTasks + ' open task' + (s.openTasks === 1 ? '' : 's')); }).join(''), 'No open CM tasks.');
+    } else if (r === 'Sales') {
+      var noContract = schools.filter(function (s) { return !s.contract; });
+      kpis = kpiCard('Partner schools', schools.length, '#/schools') + kpiCard('Renewing in 90 days', renewals.length, '#/contracts') + kpiCard('No contract on file', noContract.length, '#/schools') + kpiCard('Active contacts', contacts.length, '#/contacts');
+      main = renewCard + listCard('No contract on file', 'Worth a conversation', noContract.map(function (s) { return schoolRow(s, s.products.map(function (p) { return p.label; }).join(', ') || 'No products listed'); }).join(''), 'Every school has a contract on file.');
+    } else if (r === 'Finance') {
+      var total = storageRateTotal(storage);
+      var expired = schools.filter(function (s) { return s.contract && s.contract.status === 'Expired'; });
+      kpis = kpiCard('Monthly storage cost', money(total), '#/map?layer=storage', storage.length + ' locations') + kpiCard('Renewing in 90 days', renewals.length, '#/contracts') + kpiCard('Expired contracts', expired.length, '#/contracts') + kpiCard('Active contracts', schools.filter(function (s) { return s.contract && s.contract.status === 'Active'; }).length, '#/contracts');
+      main = listCard('Storage costs', 'Highest first', storage.slice().sort(function (a, b) { return storageRateTotal([b]) - storageRateTotal([a]); }).map(function (st) {
+        return '<a class="rowlink" href="#/map?storage=' + encodeURIComponent(st.id) + '"><span class="tag">' + icon('box', 16) + '</span><span class="t"><b>' + esc(st.company || st.address) + '</b><span>' + esc(st.school) + (st.size ? ' · ' + esc(st.size) : '') + '</span></span><b>' + (st.rate ? esc(money(storageRateTotal([st]))) + '<span class="small muted"> /mo</span>' : '<span class="small muted">No rate</span>') + '</b></a>';
+      }).join(''), 'No storage locations yet.') + renewCard;
+    } else {
+      kpis = kpiCard('Storage locations', storage.length, '#/map?layer=storage') + kpiCard('Critical stock', critical.length, '#/schools', 'Schools') + kpiCard('Open CM tasks', tasks.reduce(function (a, s) { return a + s.openTasks; }, 0), '#/logs/cm') + kpiCard('Schools on the map', (d.locations || []).length, '#/map');
+      main = '<section class="card" style="gap:4px"><div class="card-head" style="margin-bottom:8px"><h2>Storage locations</h2>' + (can('storage.edit') ? '<button type="button" class="btn sm" data-action="add-storage">' + icon('plus', 15, 2) + 'Add storage</button>' : '') + '</div>' +
+        (storage.length ? '<div style="display:flex;flex-direction:column">' + storage.map(storageRow).join('') + '</div>' : '<div class="empty">No storage locations yet.</div>') + '</section>' +
+        '<div class="stack">' + listCard('Critical stock', 'Restock first', critical.map(function (s) { return schoolRow(s, fmtNum(s.inStock) + ' in stock for ' + fmtNum(s.ordered) + ' ordered', '<span class="badge b-bad">Critical</span>'); }).join(''), 'No schools are critical right now.') +
+        listCard('Open CM tasks', 'Most first', tasks.slice(0, 6).map(function (s) { return schoolRow(s, s.openTasks + ' open task' + (s.openTasks === 1 ? '' : 's')); }).join(''), 'No open CM tasks.') + '</div>';
+    }
+    var tiles = [
+      can('map') ? ['#/map', 'map', 'Map', 'Schools and storage'] : null,
+      ['#/schools', 'school', 'Schools', schools.length + ' schools'],
+      can('contacts') ? ['#/contacts', 'users', 'Contacts', contacts.length + ' people'] : null,
+      can('contract.docs') ? ['#/contracts', 'file', 'Contracts', renewals.length + ' renewing soon'] : null,
+      can('logs') ? ['#/logs/cm', 'cm', 'CM Logs', 'Per school'] : null
+    ].filter(Boolean);
+    return '<header class="pagehead"><div class="titles"><span class="eyebrow">' + esc(today()) + ' · ' + esc(r) + '</span><h1 class="h1">' + greeting() + ', ' + esc(firstName(d.user.name)) + '</h1><p class="sub">' + esc(TEAM_INFO[r] || '') + '</p></div></header>' +
+      '<section class="kpis" aria-label="Summary">' + kpis + '</section>' +
+      '<div class="tiles">' + tiles.map(function (t) { return '<a class="tile" href="' + t[0] + '"><span class="ic">' + icon(t[1], 20) + '</span><span style="display:flex;flex-direction:column;gap:4px"><b>' + t[2] + '</b><small>' + esc(t[3]) + '</small></span></a>'; }).join('') + '</div>' +
+      '<div class="grid-2">' + main + '</div>' +
+      '<section class="card" style="gap:4px"><h2 style="margin-bottom:10px">Recent activity</h2>' + activityList(d.activity, true) + '</section>';
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Storage                                                          */
+  /* ---------------------------------------------------------------- */
+
+  function directionsUrl(lat, lng, addr) {
+    if (lat != null && lng != null) return 'https://www.google.com/maps/dir/?api=1&destination=' + lat + ',' + lng;
+    return addr ? 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(addr) : '';
+  }
+  function storageAddress(st) {
+    if (st.address && ((st.zip && st.address.indexOf(st.zip) !== -1) || (st.city && st.address.indexOf(st.city) !== -1))) return st.address;
+    return [st.address, st.city, [st.state, st.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  }
+
+  function storageRow(st) {
+    var bits = [st.gate ? 'Gate ' + st.gate : '', st.padlock ? 'Lock ' + st.padlock : '', st.unit ? 'Unit ' + st.unit : ''].filter(Boolean);
+    return '<a class="rowlink" href="#/map?storage=' + encodeURIComponent(st.id) + '"><span class="tag">' + icon('box', 16) + '</span><span class="t"><b>' + esc(st.company || st.address) + '</b><span>' + esc(st.school) + (st.city ? ' · ' + esc(st.city) : '') + '</span>' +
+      (bits.length ? '<span class="codeline">' + bits.map(function (b) { return '<code>' + esc(b) + '</code>'; }).join('') + '</span>' : '') + '</span>' + icon('chev') + '</a>';
+  }
+
+  function storageItem(st, editable, withSchool) {
+    var addr = storageAddress(st);
+    var dir = directionsUrl(st.lat, st.lng, addr);
+    var fact = function (label, v) { return v ? '<div><dt>' + label + '</dt><dd>' + esc(v) + '</dd></div>' : ''; };
+    var secret = function (label, v) { return v ? '<div class="secret"><span class="small muted">' + label + '</span><b>' + esc(v) + '</b>' + copyBtn(v, label.toLowerCase()) + '</div>' : ''; };
+    var codes = secret('Gate code', st.gate) + secret('Padlock', st.padlock) + secret('Account login', st.accountLogin) + secret('Account email', st.accountEmail);
+    var site = webUrl(st.website);
+    return '<div class="storage' + (st.status === 'Closed' ? ' inactive' : '') + '">' +
+      '<div class="card-head" style="align-items:flex-start"><div style="display:flex;gap:12px;min-width:0"><span class="tag">' + icon('box', 18) + '</span><div style="display:flex;flex-direction:column;gap:4px;min-width:0">' +
+      '<div class="nm"><b>' + esc(st.company || 'Storage') + '</b><span class="badge sm b-info">' + esc(st.type || 'Storage') + '</span>' + (st.status === 'Closed' ? '<span class="badge sm b-mute">Closed</span>' : '') + '</div>' +
+      (withSchool ? '<a class="small plain" href="' + schoolHref(st.school) + '">' + esc(st.school) + '</a>' : '') + '</div></div>' +
+      '<div class="row" style="gap:4px;flex-wrap:nowrap">' + (dir ? '<a class="copybtn" href="' + esc(dir) + '" target="_blank" rel="noopener" title="Directions" aria-label="Directions to ' + esc(st.company || 'storage') + '">' + icon('dir', 16, 2) + '</a>' : '') +
+      (can('map') && st.lat != null ? '<a class="copybtn" href="#/map?storage=' + encodeURIComponent(st.id) + '" title="Show on map" aria-label="Show on map">' + icon('map', 16, 2) + '</a>' : '') +
+      (editable ? '<button type="button" class="copybtn" data-action="edit-storage" data-id="' + esc(st.id) + '" title="Edit" aria-label="Edit ' + esc(st.company || 'storage') + '">' + icon('pencil', 15, 2) + '</button>' : '') + '</div></div>' +
+      (addr ? '<div class="reachline">' + icon('pin', 14, 2) + '<span>' + esc(addr) + '</span>' + copyBtn(addr, 'address') + '</div>' : '') +
+      '<dl class="facts">' + fact('Size', st.size) + fact('Unit', st.unit) + (st.rate ? fact('Monthly rate', money(storageRateTotal([st]))) : '') + fact('Location contact', st.contact) + '</dl>' +
+      (codes ? '<div class="codes">' + codes + '</div>' : '') +
+      (site ? '<a class="plink" href="' + esc(site) + '" target="_blank" rel="noopener">' + icon('globe', 15, 2) + '<span>' + esc(site.replace(/^https?:\/\//, '').replace(/\/$/, '')) + '</span>' + icon('ext', 13, 2) + '</a>' : '') +
+      (st.notes ? '<p class="small muted" style="margin:0;white-space:pre-line">' + esc(st.notes) + '</p>' : '') +
+      '</div>';
+  }
+
+  function storageCard(schoolName, list, hist) {
+    if (!list) return '';
+    var edit = can('storage.edit');
+    var histHtml = (hist && hist.length) ? '<details class="morebox"><summary>Storage changes · ' + hist.length + '</summary>' + hist.map(function (h) {
+      return '<div class="hist"><span class="dot" aria-hidden="true"></span><div class="t"><b>' + esc(h.field) + '</b><span>' + (h.oldValue ? '<s>' + esc(h.oldValue) + '</s> to ' : '') + esc(h.newValue || '(blank)') + '</span><span>' + esc(h.by) + ' · ' + esc(relTime(h.at)) + '</span></div></div>';
+    }).join('') + '</details>' : '';
+    return '<section class="card span-all" aria-labelledby="st-h"><div class="card-head"><div style="display:flex;flex-direction:column;gap:4px"><h2 id="st-h">Storage</h2><span class="hint">' + (list.length ? list.length + ' location' + (list.length === 1 ? '' : 's') : 'Where our products are kept near campus') + '</span></div>' +
+      (edit ? '<button type="button" class="btn sm" data-action="add-storage" data-school="' + esc(schoolName) + '">' + icon('plus', 15, 2) + 'Add storage</button>' : '') + '</div>' +
+      (list.length ? '<div class="contact-grid" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr))">' + list.map(function (st) { return storageItem(st, edit, false); }).join('') + '</div>' : '<div class="empty">No storage location on file for this school.</div>') +
+      histHtml + '</section>';
+  }
+
+  var STORAGE_TYPES = ['Self storage', 'On campus', 'Semi parking', 'Yard', 'Warehouse', 'Other'];
+
+  function openStorageModal(st, presetSchool) {
+    if (!can('storage.edit')) return;
+    closePalette();
+    var d = state.data;
+    var names = {};
+    d.schools.forEach(function (s) { names[s.name] = true; });
+    (d.locations || []).forEach(function (l) { names[l.school] = true; });
+    var v = st || { type: 'Self storage', status: 'Active' };
+    var f = function (id, label, val, opts) {
+      opts = opts || {};
+      return '<div class="field' + (opts.full ? ' full' : '') + '"><label for="s-' + id + '">' + label + (opts.optional ? ' <span class="muted" style="font-weight:400">(optional)</span>' : '') + '</label>' +
+        (opts.area ? '<textarea id="s-' + id + '" name="' + id + '" maxlength="1000">' + esc(val || '') + '</textarea>' : '<input id="s-' + id + '" name="' + id + '" value="' + esc(val || '') + '"' + (opts.list ? ' list="' + opts.list + '" autocomplete="off"' : '') + (opts.mode ? ' inputmode="' + opts.mode + '"' : '') + '>') + '</div>';
+    };
+    state.modal = true;
+    $('#palette-root').innerHTML = '<div class="overlay" data-action="modal-bg"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="sm-h">' +
+      '<div class="card-head"><h2 id="sm-h" style="font-family:var(--display);font-size:20px;font-weight:800">' + (st ? 'Edit storage location' : 'Add a storage location') + '</h2>' +
+      '<button type="button" class="copybtn" data-action="close-modal" aria-label="Close">' + icon('x', 18, 2) + '</button></div>' +
+      '<form class="form" id="storage-modal-form" data-id="' + esc(st ? st.id : '') + '" novalidate><div class="fields">' +
+      f('school', 'School', st ? st.school : (presetSchool || ''), { full: true, list: 's-schools' }) + '<datalist id="s-schools">' + Object.keys(names).sort().map(function (n) { return '<option value="' + esc(n) + '"></option>'; }).join('') + '</datalist>' +
+      '<div class="field"><label for="s-type">Type</label><select id="s-type" name="type">' + STORAGE_TYPES.map(function (t) { return '<option' + (t === v.type ? ' selected' : '') + '>' + t + '</option>'; }).join('') + '</select></div>' +
+      f('company', 'Company or place', v.company) +
+      f('address', 'Street address', v.address, { full: true }) +
+      f('city', 'City', v.city) + f('state', 'State', v.state) + f('zip', 'ZIP', v.zip, { mode: 'numeric' }) + f('size', 'Size', v.size, { optional: true }) +
+      f('unit', 'Unit or trailer', v.unit, { optional: true }) + f('rate', 'Monthly rate', v.rate, { optional: true, mode: 'decimal' }) +
+      '<span class="legend-title">Access</span>' +
+      f('gate', 'Gate code', v.gate, { optional: true }) + f('padlock', 'Padlock', v.padlock, { optional: true }) +
+      f('accountEmail', 'Account email', v.accountEmail, { optional: true }) + f('accountLogin', 'Account login', v.accountLogin, { optional: true }) +
+      '<span class="legend-title">Details</span>' +
+      f('contact', 'Location contact', v.contact, { optional: true }) + f('website', 'Website', v.website, { optional: true }) +
+      f('notes', 'Notes', v.notes, { full: true, area: true, optional: true }) +
+      (st ? '<div class="field"><label for="s-status">Status</label><select id="s-status" name="status"><option' + (v.status !== 'Closed' ? ' selected' : '') + '>Active</option><option' + (v.status === 'Closed' ? ' selected' : '') + '>Closed</option></select></div>' : '') +
+      '</div><div class="formfoot" style="border:0;padding:0"><span class="small muted">Codes are only shown to Managers, On-Field and Campus Managers.</span>' +
+      '<button type="submit" class="btn primary">' + (st ? 'Save storage' : icon('plus', 16, 2) + 'Add storage') + '</button></div></form></div></div>';
+    var first = $(st || presetSchool ? '#s-company' : '#s-school');
+    if (first) first.focus();
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Map                                                              */
+  /* ---------------------------------------------------------------- */
+
+  var PROGRAM_COLORS = { Rental: '#1F6FB5', Lease: '#5FA02E', Purchase: '#E08A1E', Other: '#8A99A8' };
+  var PROGRAMS = ['Rental', 'Lease', 'Purchase', 'Other'];
+  var leafletPromise = null;
+
+  function loadLeaflet() {
+    if (window.L) return Promise.resolve(window.L);
+    if (leafletPromise) return leafletPromise;
+    leafletPromise = new Promise(function (resolve, reject) {
+      var css = document.createElement('link');
+      css.rel = 'stylesheet';
+      css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      document.head.appendChild(css);
+      var s = document.createElement('script');
+      s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+      s.onload = function () { resolve(window.L); };
+      s.onerror = function () { leafletPromise = null; reject(new Error('The map could not load. Check your connection and try again.')); };
+      document.head.appendChild(s);
+    });
+    return leafletPromise;
+  }
+
+  function programOf(p) { return PROGRAMS.indexOf(p) !== -1 ? p : 'Other'; }
+
+  function mapPoints() {
+    var d = state.data;
+    var bySchool = {};
+    d.schools.forEach(function (s) { bySchool[norm(s.name)] = s; });
+    var seen = {};
+    var pts = (d.locations || []).map(function (l) {
+      var s = bySchool[norm(l.school)] || null;
+      var program = programOf(l.program || (s && s.contract && s.contract.type));
+      var key = l.lat.toFixed(3) + ',' + l.lng.toFixed(3);
+      var n = seen[key] = (seen[key] || 0) + 1;
+      return { id: 'sc:' + l.school, kind: 'school', name: l.school, program: program, lat: l.lat, lng: l.lng + (n - 1) * 0.012, loc: l, school: s };
+    });
+    (d.storage || []).forEach(function (st) {
+      if (st.lat == null || st.lng == null || st.status === 'Closed') return;
+      pts.push({ id: 'st:' + st.id, kind: 'storage', name: st.company || st.address || 'Storage', lat: st.lat, lng: st.lng, storage: st });
+    });
+    return pts;
+  }
+
+  function mapFiltered() {
+    var m = state.map;
+    var q = m.q.trim().toLowerCase();
+    return mapPoints().filter(function (p) {
+      if (p.kind === 'storage') { if (!m.storage) return false; }
+      else {
+        if (!m.programs[p.program]) return false;
+        if (m.critical && !(p.school && p.school.stockStatus === 'Critical')) return false;
+      }
+      if (!q) return true;
+      var hay = p.kind === 'storage' ? [p.name, p.storage.school, p.storage.city, p.storage.state, p.storage.type].join(' ') : [p.name, p.loc.city, p.loc.state, p.program].join(' ');
+      return hay.toLowerCase().indexOf(q) !== -1;
+    });
+  }
+
+  function miles(a, b) {
+    var R = 3958.8, toR = Math.PI / 180;
+    var dLat = (b.lat - a.lat) * toR, dLng = (b.lng - a.lng) * toR;
+    var x = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(a.lat * toR) * Math.cos(b.lat * toR) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+  }
+
+  function viewMap(query) {
+    if (!state.map) state.map = { programs: { Rental: true, Lease: true, Purchase: true, Other: true }, storage: true, critical: false, q: '', selected: null };
+    var m = state.map;
+    m.selected = null;
+    if (query.school) m.selected = 'sc:' + query.school;
+    if (query.storage) { m.selected = 'st:' + query.storage; m.storage = true; }
+    if (query.layer === 'storage') { m.storage = true; m.programs = { Rental: false, Lease: false, Purchase: false, Other: false }; }
+    return '<header class="pagehead"><div class="titles"><h1 class="h1">Map</h1><p class="sub">Every school we rent, lease and sell to' + (can('storage') ? ', plus our storage spots' : '') + '. Click a pin to see how it connects.</p></div></header>' +
+      '<div class="mapwrap"><aside class="card mappanel" id="map-panel" aria-label="Map details">' + mapPanel() + '</aside>' +
+      '<div class="mapbox"><div id="map" role="region" aria-label="Map of schools"><div class="empty" style="margin:20px">Loading the map...</div></div>' +
+      '<div class="maplegend">' + PROGRAMS.map(function (p) { return '<span><i style="background:' + PROGRAM_COLORS[p] + '"></i>' + p + '</span>'; }).join('') + (can('storage') ? '<span><i class="sq"></i>Storage</span>' : '') + '<span><i style="background:#fff;border:2px solid #D64545"></i>Critical stock</span></div></div></div>';
+  }
+
+  function mapPanel() {
+    var m = state.map;
+    var all = mapPoints();
+    if (m.selected) {
+      var p = all.filter(function (x) { return x.id === m.selected; })[0];
+      if (p) return p.kind === 'storage' ? mapStorageDetail(p, all) : mapSchoolDetail(p, all);
+    }
+    var counts = {};
+    all.forEach(function (x) { var k = x.kind === 'storage' ? 'storage' : x.program; counts[k] = (counts[k] || 0) + 1; });
+    var chips = PROGRAMS.filter(function (p) { return counts[p]; }).map(function (p) {
+      return '<button type="button" class="pill sm" data-mapf="' + p + '" aria-pressed="' + !!m.programs[p] + '"><i class="dot" style="background:' + PROGRAM_COLORS[p] + '"></i>' + p + ' · ' + counts[p] + '</button>';
+    }).join('') + (counts.storage ? '<button type="button" class="pill sm" data-mapf="storage" aria-pressed="' + m.storage + '"><i class="dot sq"></i>Storage · ' + counts.storage + '</button>' : '') +
+      (all.some(function (x) { return x.school && x.school.stockStatus === 'Critical'; }) ? '<button type="button" class="pill sm" data-mapf="critical" aria-pressed="' + m.critical + '">Critical stock only</button>' : '');
+    var list = mapFiltered().sort(function (a, b) { return (a.kind === b.kind ? 0 : a.kind === 'school' ? -1 : 1) || a.name.localeCompare(b.name); });
+    return '<div class="field"><label for="map-search" class="sr-only">Search the map</label><input id="map-search" type="search" placeholder="Search schools, cities, storage" value="' + esc(m.q) + '" autocomplete="off"></div>' +
+      '<div class="row" style="gap:6px">' + chips + '</div>' +
+      '<div class="small muted">' + list.length + ' on the map</div>' +
+      '<div class="maplist" id="map-list">' + mapListHtml(list) + '</div>';
+  }
+
+  function mapListHtml(list) {
+    if (!list.length) return '<div class="empty">Nothing matches these filters.</div>';
+    return list.map(function (p) {
+      var sub = p.kind === 'storage' ? [p.storage.type, p.storage.school].filter(Boolean).join(' · ') : [p.program, [p.loc.city, p.loc.state].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
+      var mark = p.kind === 'storage' ? '<span class="pinmark sq"></span>' : '<span class="pinmark' + (p.school && p.school.stockStatus === 'Critical' ? ' crit' : '') + '" style="background:' + PROGRAM_COLORS[p.program] + '"></span>';
+      return '<button type="button" class="maprow" data-mappick="' + esc(p.id) + '">' + mark + '<span class="t"><b>' + esc(p.name) + '</b><span>' + esc(sub) + '</span></span>' + icon('chev', 16) + '</button>';
+    }).join('');
+  }
+
+  function nearbyStorage(p, all) {
+    return all.filter(function (x) { return x.kind === 'storage'; }).map(function (x) {
+      return { p: x, mi: miles(p, x), own: norm(x.storage.school) === norm(p.name) };
+    }).filter(function (x) { return x.own || x.mi < 60; }).sort(function (a, b) { return (b.own - a.own) || a.mi - b.mi; }).slice(0, 4);
+  }
+
+  function mapSchoolDetail(p, all) {
+    var s = p.school;
+    var l = p.loc;
+    var addr = l.address && ((l.zip && l.address.indexOf(l.zip) !== -1) || (l.city && l.address.indexOf(l.city) !== -1)) ? l.address : [l.address, l.city, [l.state, l.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+    var contacts = (state.data.contacts || []).filter(function (c) { return c.status === 'Active' && norm(c.school) === norm(p.name); });
+    var primary = contacts.filter(function (c) { return c.role === 'Primary'; })[0] || contacts[0];
+    var near = nearbyStorage(p, all);
+    var block = function (title, inner) { return inner ? '<div class="pblock"><span class="legend-title">' + title + '</span>' + inner + '</div>' : ''; };
+    var stock = s && s.products && s.products.length ? s.products.slice(0, 4).map(function (pr) {
+      return '<div style="display:flex;flex-direction:column;gap:6px"><div class="card-head"><span style="font-weight:600;font-size:13px">' + esc(pr.label) + '</span>' + (pr.status ? '<span class="badge sm ' + (STOCK_CLASS[pr.status] || 'b-mute') + '">' + esc(pr.status === 'Check' ? 'Check' : pr.status) + '</span>' : '') + '</div>' +
+        (pr.ordered != null ? covBar(pr.inStock, pr.ordered, pr.status) + '<span class="small muted">' + (pr.inStock == null ? 'Stock count missing' : fmtNum(pr.inStock) + ' in stock for ' + fmtNum(pr.ordered) + ' ordered') + '</span>' : '') + '</div>';
+    }).join('') : '';
+    return '<button type="button" class="btn sm" data-action="map-back" style="align-self:flex-start">' + icon('chev', 14, 2).replace('<svg', '<svg style="transform:rotate(180deg)"') + 'All locations</button>' +
+      '<div style="display:flex;flex-direction:column;gap:8px"><h2 style="font-family:var(--display);font-size:20px;font-weight:800;margin:0">' + esc(p.name) + '</h2>' +
+      '<div class="row" style="gap:6px"><span class="badge sm" style="background:' + PROGRAM_COLORS[p.program] + ';color:#fff">' + esc(p.program) + '</span>' + (s && s.contract ? contractBadge(s.contract) : '') + (s && s.openTasks ? '<span class="badge sm b-info">' + s.openTasks + ' open CM task' + (s.openTasks === 1 ? '' : 's') + '</span>' : '') + '</div></div>' +
+      block('Campus', (addr ? '<div class="reachline">' + icon('pin', 14, 2) + '<span>' + esc(addr) + '</span>' + copyBtn(addr, 'address') + '</div>' : '') +
+        '<a class="plink" href="' + esc(directionsUrl(l.lat, l.lng, addr)) + '" target="_blank" rel="noopener">' + icon('dir', 15, 2) + '<span>Directions</span>' + icon('ext', 13, 2) + '</a>') +
+      block('Stock', stock) +
+      block('Contact', primary ? '<div style="display:flex;flex-direction:column;gap:2px"><b style="font-size:14px">' + esc(primary.name) + '</b>' + (primary.title ? '<span class="small muted">' + esc(primary.title) + '</span>' : '') + reachLine('mail', primary.email) + reachLine('phone', primary.phone) + '</div>' + (contacts.length > 1 ? '<span class="small muted">+' + (contacts.length - 1) + ' more on the school page</span>' : '') : '') +
+      block('Storage nearby', near.map(function (x) {
+        return '<button type="button" class="maprow" data-mappick="' + esc(x.p.id) + '"><span class="pinmark sq"></span><span class="t"><b>' + esc(x.p.name) + '</b><span>' + esc(x.p.storage.type || 'Storage') + ' · ' + (x.mi < 0.2 ? 'on campus' : x.mi.toFixed(1) + ' mi away') + (x.own ? '' : ' · ' + esc(x.p.storage.school)) + '</span></span>' + icon('chev', 16) + '</button>';
+      }).join('')) +
+      (s ? '<a class="btn primary" href="' + schoolHref(s.name) + '">Open school page' + icon('chev', 16, 2) + '</a>' : '<p class="small muted" style="margin:0">' + (p.program === 'Purchase' ? 'A Purchase school. It has no CM Log or rental stock in Pangia.' : 'Not in the Pangia directory yet.') + '</p>');
+  }
+
+  function mapStorageDetail(p, all) {
+    var st = p.storage;
+    var campus = all.filter(function (x) { return x.kind === 'school' && norm(x.name) === norm(st.school); })[0];
+    return '<button type="button" class="btn sm" data-action="map-back" style="align-self:flex-start">' + icon('chev', 14, 2).replace('<svg', '<svg style="transform:rotate(180deg)"') + 'All locations</button>' +
+      storageItem(st, can('storage.edit'), true) +
+      (campus ? '<button type="button" class="maprow" data-mappick="' + esc(campus.id) + '"><span class="pinmark" style="background:' + PROGRAM_COLORS[campus.program] + '"></span><span class="t"><b>' + esc(campus.name) + '</b><span>Campus · ' + (miles(p, campus) < 0.2 ? 'on campus' : miles(p, campus).toFixed(1) + ' mi away') + '</span></span>' + icon('chev', 16) + '</button>' : '');
+  }
+
+  function setMapTiles() {
+    var L = window.L;
+    if (!L || !state.mapObj) return;
+    if (state.mapTiles) state.mapObj.removeLayer(state.mapTiles);
+    var url = isDark() ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+    state.mapTiles = L.tileLayer(url, { maxZoom: 18, subdomains: 'abcd', attribution: '&copy; OpenStreetMap contributors &copy; CARTO' }).addTo(state.mapObj);
+  }
+
+  function drawMarkers(fit) {
+    var L = window.L;
+    if (!L || !state.mapObj) return;
+    if (state.mapLayer) state.mapObj.removeLayer(state.mapLayer);
+    var layer = L.layerGroup();
+    var markers = {};
+    var pts = mapFiltered();
+    pts.forEach(function (p) {
+      var mk;
+      var sel = state.map.selected === p.id;
+      if (p.kind === 'storage') {
+        mk = L.marker([p.lat, p.lng], { icon: L.divIcon({ className: 'stpin' + (sel ? ' sel' : ''), html: '<span>' + icon('box', 12, 2.4) + '</span>', iconSize: [22, 22], iconAnchor: [11, 11] }), keyboard: true, title: p.name });
+      } else {
+        var crit = p.school && p.school.stockStatus === 'Critical';
+        mk = L.circleMarker([p.lat, p.lng], { radius: sel ? 10 : 7, fillColor: PROGRAM_COLORS[p.program], fillOpacity: 1, color: crit ? '#D64545' : (sel ? '#10233A' : '#FFFFFF'), weight: crit || sel ? 3 : 2 });
+      }
+      mk.bindTooltip(esc(p.name), { direction: 'top', offset: [0, -6] });
+      mk.on('click', function () { selectMapPoint(p.id, false); });
+      mk.addTo(layer);
+      markers[p.id] = mk;
+    });
+    layer.addTo(state.mapObj);
+    state.mapLayer = layer;
+    state.mapMarkers = markers;
+    if (fit && pts.length) {
+      var sel = pts.filter(function (p) { return p.id === state.map.selected; })[0];
+      if (sel) state.mapObj.setView([sel.lat, sel.lng], 11);
+      else state.mapObj.fitBounds(L.latLngBounds(pts.map(function (p) { return [p.lat, p.lng]; })).pad(0.08), { maxZoom: 9 });
+    }
+  }
+
+  function selectMapPoint(id, fly) {
+    state.map.selected = id;
+    var panel = $('#map-panel');
+    if (panel) { panel.innerHTML = mapPanel(); panel.scrollTop = 0; }
+    drawMarkers(false);
+    var p = mapPoints().filter(function (x) { return x.id === id; })[0];
+    if (p && state.mapObj && fly) state.mapObj.flyTo([p.lat, p.lng], Math.max(state.mapObj.getZoom(), 10), { duration: 0.6 });
+  }
+
+  function initMap() {
+    loadLeaflet().then(function (L) {
+      var el = $('#map');
+      if (!el || parseRoute().name !== 'map') return;
+      el.innerHTML = '';
+      state.mapObj = L.map(el, { zoomControl: true, worldCopyJump: true }).setView([39.5, -96], 4);
+      setMapTiles();
+      drawMarkers(true);
+    }).catch(function (err) {
+      var el = $('#map');
+      if (el) el.innerHTML = '<div class="empty" style="margin:20px">' + esc(err.message) + '</div>';
+    });
+  }
+
+  function destroyMap() {
+    if (state.mapObj) { try { state.mapObj.remove(); } catch (e) { /* already gone */ } }
+    state.mapObj = null; state.mapLayer = null; state.mapTiles = null; state.mapMarkers = null;
+  }
+
+  function repaintMapPanel() {
+    var list = $('#map-list');
+    var panel = $('#map-panel');
+    if (state.map.selected || !list) { if (panel) panel.innerHTML = mapPanel(); }
+    else list.innerHTML = mapListHtml(mapFiltered().sort(function (a, b) { return (a.kind === b.kind ? 0 : a.kind === 'school' ? -1 : 1) || a.name.localeCompare(b.name); }));
+    drawMarkers(false);
+  }
+
+  /* ---------------------------------------------------------------- */
   /* Command palette (Ctrl+K)                                         */
   /* ---------------------------------------------------------------- */
 
@@ -1204,7 +1624,7 @@
         items.push({ group: 'Schools', tag: initials(s.name), label: s.name, sub: bits.join(' · ') || s.products.map(function (p) { return p.label; }).join(', '), href: schoolHref(s.name), words: s.products.map(function (p) { return p.label; }).join(' ') });
       });
     }
-    if (r !== 'School Admin') {
+    if (can('contacts')) {
       (d.contacts || []).forEach(function (ct) {
         if (ct.status !== 'Active') return;
         items.push({ group: 'People', tag: initials(ct.name), label: ct.name, sub: [ct.role, ct.title, ct.school].filter(Boolean).join(' · '), href: schoolHref(ct.school) + '?contact=' + encodeURIComponent(ct.id), words: ct.email + ' ' + ct.phone, contactSchool: ct.school });
@@ -1216,12 +1636,18 @@
         if (u) items.push({ group: 'Logs', tag: t === 'cm' ? 'CM' : t === 'delivery' ? 'DL' : 'CL', label: s.name + ' ' + LOG_NAMES[t], sub: 'Opens in Google Sheets', href: u, external: true });
       });
     });
+    (d.storage || []).forEach(function (st) {
+      if (st.status === 'Closed') return;
+      items.push({ group: 'Storage', tag: icon('box', 16), raw: true, label: st.company || st.address, sub: [st.type, st.school, st.city].filter(Boolean).join(' · '), href: '#/map?storage=' + encodeURIComponent(st.id), words: 'storage ' + st.unit + ' ' + st.address });
+    });
+    if (r !== 'School Admin') items.push({ group: 'Go to', tag: icon('home', 16), label: 'Home', sub: 'Your overview', href: '#/', raw: true });
+    if (can('directory')) items.push({ group: 'Go to', tag: icon('school', 16), label: 'Schools', sub: 'The full directory', href: '#/schools', raw: true });
+    if (can('contacts')) items.push({ group: 'Go to', tag: icon('users', 16), label: 'Contacts', sub: 'Everyone we work with at each school', href: '#/contacts', raw: true });
+    if (can('map')) items.push({ group: 'Go to', tag: icon('map', 16), label: 'Map', sub: 'Schools and storage on a map', href: '#/map', raw: true });
+    if (can('contract.docs')) items.push({ group: 'Go to', tag: icon('file', 16), label: 'Contracts', sub: 'Contract status and renewals', href: '#/contracts', raw: true });
+    if (can('contacts.edit')) items.push({ group: 'Actions', tag: icon('plus', 16), label: 'Add a contact', sub: 'Contacts', action: 'add-contact', raw: true });
+    if (can('storage.edit')) items.push({ group: 'Actions', tag: icon('plus', 16), label: 'Add a storage location', sub: 'Storage', action: 'add-storage', raw: true });
     if (r === 'Manager') {
-      items.push({ group: 'Go to', tag: icon('home', 16), label: 'Home', sub: 'Season, health and renewals', href: '#/', raw: true });
-      items.push({ group: 'Go to', tag: icon('school', 16), label: 'Schools', sub: 'The full directory', href: '#/schools', raw: true });
-      items.push({ group: 'Go to', tag: icon('users', 16), label: 'Contacts', sub: 'Everyone we work with at each school', href: '#/contacts', raw: true });
-      items.push({ group: 'Actions', tag: icon('plus', 16), label: 'Add a contact', sub: 'Contacts', action: 'add-contact', raw: true });
-      items.push({ group: 'Go to', tag: icon('file', 16), label: 'Contracts', sub: 'Add or review contracts', href: '#/contracts', raw: true });
       items.push({ group: 'Actions', tag: icon('plus', 16), label: 'Add a contract', sub: 'Contracts', href: '#/contracts', raw: true });
       items.push({ group: 'Actions', tag: icon('refresh', 16), label: 'Refresh the directory', sub: 'Re-read logs, inventory and contracts', action: 'refresh', raw: true });
     }
@@ -1251,11 +1677,11 @@
     var q = state.palette.query.trim().toLowerCase();
     var all = paletteItems();
     var hits = all.filter(function (it) {
-      if (!q) return it.group !== 'Logs' && it.group !== 'People';
+      if (!q) return it.group !== 'Logs' && it.group !== 'People' && it.group !== 'Storage';
       var hay = (it.label + ' ' + (it.sub || '') + ' ' + (it.words || '')).toLowerCase();
       return q.split(/\s+/).every(function (w) { return hay.indexOf(w) !== -1; });
     });
-    var groups = ['Schools', 'People', 'Go to', 'Logs', 'Actions'];
+    var groups = ['Schools', 'People', 'Storage', 'Go to', 'Logs', 'Actions'];
     var flat = [];
     var html = '';
     groups.forEach(function (g) {
@@ -1318,6 +1744,14 @@
       return;
     }
     if (name === 'close-modal') return closeModal();
+    if (name === 'add-storage') return openStorageModal(null, (el && el.getAttribute('data-school')) || currentSchoolName());
+    if (name === 'edit-storage' && el) {
+      var sid = el.getAttribute('data-id');
+      var stv = (state.data.storage || []).filter(function (x) { return x.id === sid; })[0];
+      if (stv) openStorageModal(stv);
+      return;
+    }
+    if (name === 'map-back') { state.map.selected = null; var mp = $('#map-panel'); if (mp) mp.innerHTML = mapPanel(); drawMarkers(false); return; }
     if (name === 'copy-link') {
       var text = location.href;
       if (navigator.clipboard) navigator.clipboard.writeText(text).then(function () { toast('Link copied'); }, function () { toast(text); });
@@ -1372,6 +1806,19 @@
       e.preventDefault();
       return doAction(act.getAttribute('data-action'), act);
     }
+    var mpick = e.target.closest('[data-mappick]');
+    if (mpick) return selectMapPoint(mpick.getAttribute('data-mappick'), true);
+    var mf = e.target.closest('[data-mapf]');
+    if (mf) {
+      var k = mf.getAttribute('data-mapf');
+      if (k === 'storage') state.map.storage = !state.map.storage;
+      else if (k === 'critical') state.map.critical = !state.map.critical;
+      else state.map.programs[k] = !state.map.programs[k];
+      var pnl = $('#map-panel');
+      if (pnl) pnl.innerHTML = mapPanel();
+      drawMarkers(true);
+      return;
+    }
     var cf = e.target.closest('[data-cfilter]');
     if (cf) {
       state.contactFilter = cf.getAttribute('data-cfilter');
@@ -1391,6 +1838,9 @@
       state.search = e.target.value;
       var rows = $('#school-rows');
       if (rows) rows.innerHTML = schoolRows();
+    } else if (e.target.id === 'map-search') {
+      state.map.q = e.target.value;
+      repaintMapPanel();
     } else if (e.target.id === 'contact-search') {
       state.contactSearch = e.target.value;
       repaintContacts();
@@ -1414,6 +1864,29 @@
 
   document.addEventListener('submit', function (e) {
     var form = e.target;
+    if (form.id === 'storage-modal-form') {
+      e.preventDefault();
+      var se = form.elements;
+      var sp = { id: form.getAttribute('data-id') };
+      ['school', 'type', 'company', 'address', 'city', 'state', 'zip', 'size', 'unit', 'rate', 'gate', 'padlock', 'accountEmail', 'accountLogin', 'contact', 'website', 'notes'].forEach(function (k) { sp[k] = se[k] ? se[k].value.trim() : ''; });
+      sp.status = se.status ? se.status.value : 'Active';
+      if (!sp.school) { toast('Pick a school for this storage location.', true); return; }
+      if (!sp.company && !sp.address) { toast('Add the storage company or the address.', true); return; }
+      var sbtn = form.querySelector('[type="submit"]');
+      sbtn.disabled = true; sbtn.textContent = 'Saving...';
+      api('saveStorage', sp).then(function (res) {
+        state.data.storage = res.storage;
+        if (res.locations) state.data.locations = res.locations;
+        if (res.school) state.schoolCache[sp.school] = res.school;
+        closeModal();
+        toast(!res.changed ? 'No changes to save.' : sp.id ? 'Storage saved. The change is in the history.' : 'Storage location added');
+        renderRoute();
+      }).catch(function (err) {
+        sbtn.disabled = false; sbtn.textContent = sp.id ? 'Save storage' : 'Add storage';
+        if (err.code !== 'auth_expired') toast(err.message, true);
+      });
+      return;
+    }
     if (form.id === 'contact-modal-form') {
       e.preventDefault();
       var el = form.elements;

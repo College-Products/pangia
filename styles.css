@@ -379,3 +379,52 @@ details.morebox { border-top: 1px solid var(--border); padding-top: 12px; }
 details.morebox summary { cursor: pointer; color: var(--link); font-weight: 600; font-size: 13px; }
 details.morebox[open] summary { margin-bottom: 4px; }
 td .reachline a, td .reachline span { white-space: nowrap; overflow-wrap: normal; }
+
+/* ---------- Storage ---------- */
+.storage { display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); min-width: 0; }
+.storage.inactive { opacity: .6; }
+.storage .nm { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.storage .nm b { font-size: 15px; }
+a.copybtn { text-decoration: none; }
+.codes { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.secret { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; column-gap: 4px; align-items: center; background: var(--surface2); border: 1px dashed var(--border-strong); border-radius: 10px; padding: 8px 6px 8px 12px; min-width: 0; }
+.secret .small { grid-column: 1; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+.secret b { grid-column: 1; font-size: 14px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: break-word; word-break: break-word; }
+.secret .copybtn { grid-column: 2; grid-row: 1 / span 2; }
+.codeline { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.codeline code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px; color: var(--ink); }
+
+/* ---------- Map ---------- */
+.mapwrap { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 20px; height: calc(100vh - 220px); min-height: 520px; }
+.mappanel { overflow-y: auto; gap: 14px; padding: 20px; }
+.mapbox { position: relative; border-radius: 20px; overflow: hidden; border: 1px solid var(--border); background: var(--surface2); }
+#map { position: absolute; inset: 0; }
+.maplegend { position: absolute; left: 12px; bottom: 12px; z-index: 500; display: flex; flex-wrap: wrap; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px; font-size: 12px; font-weight: 500; box-shadow: var(--shadow); max-width: calc(100% - 24px); }
+.maplegend span { display: inline-flex; align-items: center; gap: 6px; }
+.maplegend i, .pill .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
+.maplegend i.sq, .pill .dot.sq, .pinmark.sq { border-radius: 3px; background: #10233A; border: 1.5px solid #FFFFFF; box-shadow: 0 0 0 1px #10233A; }
+.pill.sm { height: 32px; padding: 0 12px; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
+.maplist { display: flex; flex-direction: column; margin: 0 -8px; }
+.maprow { display: flex; align-items: center; gap: 12px; padding: 10px 8px; border: 0; background: transparent; border-radius: 12px; text-align: left; cursor: pointer; color: var(--ink); font: inherit; width: 100%; }
+.maprow:hover { background: var(--hover); }
+.maprow .t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.maprow .t b { font-size: 14px; font-weight: 600; }
+.maprow .t span { font-size: 12px; color: var(--muted); }
+.pinmark { width: 12px; height: 12px; border-radius: 50%; flex: none; border: 2px solid #FFFFFF; box-shadow: 0 0 0 1px var(--border-strong); }
+.pinmark.crit { border-color: #D64545; box-shadow: none; }
+.stpin span { width: 22px; height: 22px; border-radius: 6px; background: #10233A; color: #FFFFFF; border: 2px solid #FFFFFF; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,.3); }
+.stpin.sel span { background: #E08A1E; transform: scale(1.2); }
+.leaflet-container { font-family: inherit; background: var(--surface2); }
+.leaflet-tooltip { font-weight: 600; font-size: 12px; border-radius: 8px; }
+[data-theme="dark"] .maplegend i.sq, [data-theme="dark"] .pill .dot.sq, [data-theme="dark"] .pinmark.sq { background: #E6EEF6; border-color: #10233A; box-shadow: 0 0 0 1px #E6EEF6; }
+[data-theme="dark"] .stpin span { background: #E6EEF6; color: #10233A; border-color: #0C1724; }
+[data-theme="dark"] .leaflet-tooltip { background: #1A2E42; color: #FFFFFF; border-color: #1A2E42; }
+[data-theme="dark"] .leaflet-bar a { background: #1A2E42; color: #FFFFFF; border-color: #0C1724; }
+@media (max-width: 860px) {
+  .mapwrap { grid-template-columns: 1fr; height: auto; }
+  .mapbox { height: 60vh; order: -1; }
+  .mappanel { max-height: none; }
+}
+
+.mappanel > * { flex-shrink: 0; }
+.pill[aria-pressed="true"] .dot { box-shadow: 0 0 0 2px #FFFFFF; }
