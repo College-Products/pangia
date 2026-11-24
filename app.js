@@ -383,7 +383,7 @@
       '<div style="display:flex;flex-direction:column;gap:20px;max-width:520px">' +
       '<span class="season-tag">College Products · internal</span>' +
       '<h1>One for all.</h1>' +
-      '<p>Products, inventory, contracts and every log for the schools you work with, the moment you sign in.</p></div>' +
+      '<p>Fewer "hey, do you have that sheet?" messages.</p></div>' +
       '<div class="roles"><span><i></i>Managers</span><span><i></i>Campus Managers</span><span><i></i>School Admins</span></div>' +
       '</section>' +
       '<section class="right" aria-label="Sign in"><div class="signcard">' +
