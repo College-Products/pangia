@@ -318,8 +318,48 @@
     renderSignIn();
   }
 
+  /* ---------------------------------------------------------------- */
+  /* Splash screen                                                    */
+  /* ---------------------------------------------------------------- */
+
+  var SPLASH_HTML = '<div class="splash" id="splash" role="status" aria-live="polite"><svg class="splash-mark" width="84" height="84" viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="10" fill="#054D80"/><path class="sp-ring" pathLength="100" d="M26.4 9.6A12.2 12.2 0 1 1 20.6 5.3" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><g class="sp-digits" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(17 16.4) scale(.84) translate(-17 -16.6)"><path d="M14.7 11.2 9.6 18.7h6.6M14.7 11.2v10.9"/><path d="M18.6 14.1a3 3 0 0 1 6 0c0 2.9-6 4.9-6 8h6.3"/></g></g><path class="sp-wave" pathLength="100" d="M11.4 24.6c1.9.8 3.8.8 5.6 0s3.8-.8 5.6 0" fill="none" stroke="#80BC41" stroke-width="1.9" stroke-linecap="round"/><g class="sp-orbit"><circle cx="24.4" cy="6.9" r="2.2" fill="#80BC41"/></g></svg><div class="splash-name"><b>Pangia</b><small>by College Products</small></div><div class="splash-bar" aria-hidden="true"><i></i></div><div class="splash-msg" id="splash-msg">Waking up Pangia</div></div>';
+  var SPLASH_MSGS = ['Waking up Pangia', 'Loading your schools', 'Checking stock and contracts', 'Finding the answer to everything'];
+  var splashShownAt = Date.now();
+  var splashTimer = null;
+
+  function showSplash() {
+    var el = $('#splash');
+    if (!el) {
+      document.body.insertAdjacentHTML('beforeend', SPLASH_HTML);
+      el = $('#splash');
+      splashShownAt = Date.now();
+    }
+    el.classList.remove('out');
+    var i = 0;
+    clearInterval(splashTimer);
+    splashTimer = setInterval(function () {
+      var msg = $('#splash-msg');
+      if (!msg) return clearInterval(splashTimer);
+      i = Math.min(i + 1, SPLASH_MSGS.length - 1);
+      msg.classList.add('swap');
+      setTimeout(function () { msg.textContent = SPLASH_MSGS[i]; msg.classList.remove('swap'); }, 180);
+      if (i === SPLASH_MSGS.length - 1) clearInterval(splashTimer);
+    }, 1400);
+  }
+
+  function hideSplash() {
+    var el = $('#splash');
+    if (!el || el.classList.contains('out')) return;
+    var wait = Math.max(0, 1100 - (Date.now() - splashShownAt));
+    setTimeout(function () {
+      clearInterval(splashTimer);
+      el.classList.add('out');
+      setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 450);
+    }, wait);
+  }
+
   function boot() {
-    renderLoading();
+    showSplash();
     api('bootstrap').then(function (data) {
       state.data = data;
       state.schoolCache = {};
@@ -353,6 +393,7 @@
       '<div class="note">' + icon('lock') + '<span>You\'ll only see the schools assigned to you. School Admins can update their school\'s registered information.</span></div>' +
       '</div></section></div>';
     showGsiButton(true);
+    hideSplash();
   }
 
   function renderLoading() {
@@ -369,6 +410,7 @@
       '<p class="sub">This Google account isn\'t set up in Pangia. Ask your College Products contact to add it.</p>' +
       (email ? '<code>' + esc(email) + '</code>' : '') +
       '<button type="button" class="btn" data-action="signout">' + icon('logout') + 'Use a different account</button></div></div>';
+    hideSplash();
   }
 
   function renderError(msg) {
@@ -376,11 +418,13 @@
       '<h1 class="h1">Pangia couldn\'t load</h1><p class="sub">' + esc(msg) + '</p>' +
       '<div class="row" style="justify-content:center"><button type="button" class="btn primary" data-action="retry">Try again</button>' +
       '<button type="button" class="btn" data-action="signout">Sign out</button></div></div></div>';
+    hideSplash();
   }
 
   function renderSetupNeeded() {
     $('#app').innerHTML = '<div class="center"><div class="statecard">' + logo(48) +
       '<h1 class="h1">Almost ready</h1><p class="sub">Add the Apps Script web app URL to <b>config.js</b> to connect Pangia.</p></div></div>';
+    hideSplash();
   }
 
   /* ---------------------------------------------------------------- */
@@ -500,6 +544,7 @@
     else if (r === 'Campus Manager') html = viewCampusHome();
     else html = viewAdminHome();
     renderShell(route, html);
+    hideSplash();
     window.scrollTo(0, 0);
     if (route.name === 'school' && r !== 'School Admin') loadSchool(route.school);
     if (route.name === 'map') initMap(route.query);
@@ -1983,6 +2028,7 @@
   /* ---------------------------------------------------------------- */
 
   function start() {
+    if ($('#splash')) showSplash();
     if (!CFG.API_URL || !/^https:\/\//.test(CFG.API_URL)) { renderSetupNeeded(); return; }
     var saved = null;
     try { saved = sessionStorage.getItem('pangia_token'); } catch (e) { /* ignore */ }
