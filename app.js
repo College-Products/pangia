@@ -17,6 +17,10 @@
     map: null,
     mapObj: null,
     assets: null,
+    fin: null,
+    finTab: null,
+    finStatus: 'Open',
+    exFilter: 'all',
     palette: { open: false, query: '', index: 0, items: [] }
   };
 
@@ -110,7 +114,8 @@
     box: 'M21 8l-9-5-9 5v8l9 5 9-5V8zM3 8l9 5 9-5M12 13v8',
     key: 'M15 7a4 4 0 1 1-3.5 6L4 20.5 3.5 18 5 16.5 6.5 18 8 16.5 6.5 15l4.9-4.9A4 4 0 0 1 15 7zM16 8h.01',
     dir: 'M12 2l8 8-8 8-8-8 8-8zM9 11h4V9l3 3-3 3v-2H10v2',
-    library: 'M4 4h4v16H4zM10 4h4v16h-4zM16.5 4.6l3.8-1 3.7 15.5-3.8.9z'
+    library: 'M4 4h4v16H4zM10 4h4v16h-4zM16.5 4.6l3.8-1 3.7 15.5-3.8.9z',
+    dollar: 'M12 2v20M17 6.5C16 5 14.3 4.5 12 4.5c-3 0-4.5 1.6-4.5 3.5 0 4.6 9.5 2.6 9.5 7.6 0 2-1.8 3.9-5 3.9-2.6 0-4.3-.8-5.3-2.4'
   };
   function icon(name, size, stroke) {
     return '<svg class="i" width="' + (size || 18) + '" height="' + (size || 18) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + (stroke || 1.8) + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + PATHS[name] + '"></path></svg>';
@@ -464,6 +469,7 @@
         (can('map') ? navLink('#/map', 'map', 'Map', r === 'map') : '') +
         (can('assets') ? navLink('#/assets', 'library', 'Asset Library', r === 'assets') : '') +
         invLink +
+        (can('finance') ? '<span class="nav-label">Finance</span>' + navLink('#/finance', 'dollar', 'Invoices and tax', r === 'finance') : '') +
         (can('logs') ? logNav : '');
     } else if (u.role === 'Campus Manager') {
       nav = navLink('#/', 'school', 'My schools', r === 'home' || r === 'school') +
@@ -524,6 +530,7 @@
     if (parts[0] === 'contacts' && can('contacts')) return { name: 'contacts', query: query };
     if (parts[0] === 'map' && can('map')) return { name: 'map', query: query };
     if (parts[0] === 'assets' && can('assets')) return { name: 'assets', query: query };
+    if (parts[0] === 'finance' && can('finance')) return { name: 'finance', query: query };
     return { name: 'home', query: query };
   }
 
@@ -546,6 +553,7 @@
     else if (route.name === 'logs' && can('logs')) html = viewLogs(route.type);
     else if (route.name === 'map') html = viewMap(route.query);
     else if (route.name === 'assets') html = viewAssets(route.query);
+    else if (route.name === 'finance') html = viewFinance(route.query);
     else if (r === 'Manager') html = viewManagerHome();
     else if (isTeam()) html = viewTeamHome();
     else if (r === 'Campus Manager') html = viewCampusHome();
@@ -555,6 +563,7 @@
     window.scrollTo(0, 0);
     if (route.name === 'school' && r !== 'School Admin') loadSchool(route.school);
     if (route.name === 'map') initMap(route.query);
+    if (route.name === 'finance') loadFinance(true).then(paintFinance).catch(function (err) { if (err.code !== 'auth_expired') { var b = $('#fin-body'); if (b) b.innerHTML = '<div class="empty">' + esc(err.message) + '</div>'; } });
   }
 
   /* ---------------------------------------------------------------- */
@@ -816,7 +825,7 @@
       '<section class="card span-all" style="gap:6px"><div class="card-head" style="margin-bottom:8px"><h2>Change history</h2><span class="hint">Every save is kept</span></div><div id="history">' + historyList(res.history) + '</div></section>' : '';
 
     var contractsCard = docs ? contractRecords(s.name, res, mgr) : '';
-    body.innerHTML = '<div class="grid">' + (s.health ? health : '') + contract + stock + contactsCard(s.name, res.contacts || [], res.contactHistory) + storageCard(s.name, res.storage, res.storageHistory) + contractsCard + (can('logs') || role() === 'Campus Manager' ? logs : '') + profileCard(res.profile) + schoolAssetsCard(res.profile) + people + activity + reg + editor + '</div>';
+    body.innerHTML = '<div class="grid">' + (s.health ? health : '') + contract + stock + contactsCard(s.name, res.contacts || [], res.contactHistory) + storageCard(s.name, res.storage, res.storageHistory) + contractsCard + (can('logs') || role() === 'Campus Manager' ? logs : '') + profileCard(res.profile) + schoolAssetsCard(res.profile) + billingCard(res.billing, s.name) + people + activity + reg + editor + '</div>';
   }
 
   function contractRecords(schoolName, res, editable) {
@@ -1335,7 +1344,8 @@
       can('contacts') ? ['#/contacts', 'users', 'Contacts', contacts.length + ' people'] : null,
       can('contract.docs') ? ['#/contracts', 'file', 'Contracts', renewals.length + ' renewing soon'] : null,
       can('logs') ? ['#/logs/cm', 'cm', 'CM Logs', 'Per school'] : null,
-      can('assets') ? ['#/assets', 'library', 'Asset Library', (d.assets || []).length + ' files'] : null
+      can('assets') ? ['#/assets', 'library', 'Asset Library', (d.assets || []).length + ' files'] : null,
+      can('finance') ? ['#/finance', 'dollar', 'Invoices and tax', 'Finance'] : null
     ].filter(Boolean);
     return '<header class="pagehead"><div class="titles"><span class="eyebrow">' + esc(today()) + ' · ' + esc(r) + '</span><h1 class="h1">' + greeting() + ', ' + esc(firstName(d.user.name)) + '</h1><p class="sub">' + esc(TEAM_INFO[r] || '') + '</p></div></header>' +
       '<section class="kpis" aria-label="Summary">' + kpis + '</section>' +
@@ -1805,6 +1815,331 @@
   }
 
   /* ---------------------------------------------------------------- */
+  /* Finance: invoices, lease billing, tax exemptions                 */
+  /* ---------------------------------------------------------------- */
+
+  var INV_CLASS = { 'Draft': 'b-mute', 'Ready': 'b-info', 'In QuickBooks': 'b-warn', 'Paid': 'b-good', 'Void': 'b-mute', 'Overdue': 'b-bad' };
+  var EX_CLASS = { 'Exempt': 'b-good', 'Requested': 'b-warn', 'Not exempt': 'b-mute', 'Missing': 'b-bad' };
+
+  function usd(n) { return '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function todayYmd() { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+  function invStatus(i) { return i.status === 'In QuickBooks' && i.due && i.due < todayYmd() ? 'Overdue' : i.status; }
+  function fmtYmd(s, opts) { return s ? fmtDate(s + 'T12:00:00', opts || { month: 'short', day: 'numeric', year: 'numeric' }) : ''; }
+
+  function loadFinance(force) {
+    if (state.fin && !force) return Promise.resolve(state.fin);
+    return api('finance').then(function (f) { state.fin = f; return f; });
+  }
+
+  function viewFinance(query) {
+    state.finTab = query.tab || state.finTab || 'invoices';
+    return '<header class="pagehead"><div class="titles"><h1 class="h1">Finance</h1><p class="sub">Prepare invoices for QuickBooks, keep lease billing on schedule and track tax exemption certificates.</p></div></header>' +
+      '<div id="fin-body">' + (state.fin ? financeBody() : '<div class="kpis"><div class="skel" style="height:118px"></div><div class="skel" style="height:118px"></div><div class="skel" style="height:118px"></div><div class="skel" style="height:118px"></div></div><div class="skel" style="height:360px;margin-top:20px"></div>') + '</div>';
+  }
+
+  function paintFinance() {
+    var b = $('#fin-body');
+    if (b && parseRoute().name === 'finance') b.innerHTML = financeBody();
+  }
+
+  function financeBody() {
+    var f = state.fin;
+    var inv = f.invoices || [];
+    var t = todayYmd();
+    var ready = inv.filter(function (i) { return i.status === 'Ready'; });
+    var unpaid = inv.filter(function (i) { return i.status === 'In QuickBooks'; });
+    var overdue = unpaid.filter(function (i) { return i.due && i.due < t; });
+    var month = new Date(Date.now() - 30 * 86400000);
+    var paid30 = inv.filter(function (i) { return i.status === 'Paid' && i.paidAt && new Date(i.paidAt + 'T12:00:00') >= month; });
+    var sum = function (l) { return l.reduce(function (a, i) { return a + i.total; }, 0); };
+    var kpi = function (label, value, note, tab) { return '<button type="button" class="kpi kpibtn" data-fintab="' + tab + '"><span class="label">' + esc(label) + '</span><span class="value">' + esc(value) + '</span>' + (note ? '<span class="small muted">' + esc(note) + '</span>' : '') + '</button>'; };
+    var tabs = [['invoices', 'Invoices', inv.filter(function (i) { return i.status !== 'Paid' && i.status !== 'Void'; }).length], ['leases', 'Lease billing', (f.due || []).length], ['exemptions', 'Tax exemptions', exemptionRows().filter(function (r) { return r.flag; }).length]];
+    var body = state.finTab === 'leases' ? financeLeases() : state.finTab === 'exemptions' ? financeExemptions() : financeInvoices();
+    return '<section class="kpis" aria-label="Finance summary">' +
+      kpi('Lease invoices to prepare', String((f.due || []).length), (f.due || []).some(function (d) { return d.late; }) ? 'Some are past their bill date' : 'Next 30 days', 'leases') +
+      kpi('Ready for QuickBooks', usd(sum(ready)), ready.length + ' invoice' + (ready.length === 1 ? '' : 's'), 'invoices') +
+      kpi('Unpaid in QuickBooks', usd(sum(unpaid)), overdue.length ? overdue.length + ' overdue, ' + usd(sum(overdue)) : 'None overdue', 'invoices') +
+      kpi('Paid in the last 30 days', usd(sum(paid30)), paid30.length + ' invoice' + (paid30.length === 1 ? '' : 's'), 'invoices') + '</section>' +
+      '<div class="segbar" role="group" aria-label="Finance sections" style="margin-top:20px">' + tabs.map(function (x) {
+        return '<button type="button" class="seg" data-fintab="' + x[0] + '" aria-pressed="' + (state.finTab === x[0]) + '">' + x[1] + (x[2] ? '<span>' + x[2] + '</span>' : '') + '</button>';
+      }).join('') + '</div><div style="margin-top:20px" class="stack">' + body + '</div>';
+  }
+
+  function financeInvoices() {
+    var f = state.fin;
+    var st = state.finStatus || 'Open';
+    var all = f.invoices || [];
+    var filters = ['Open', 'Draft', 'Ready', 'In QuickBooks', 'Overdue', 'Paid', 'Void', 'All'];
+    var match = function (i) { var s = invStatus(i); return st === 'All' || (st === 'Open' ? (s !== 'Paid' && s !== 'Void') : s === st); };
+    var list = all.filter(match);
+    var due = (f.due || []).slice(0, 6);
+    var dueCard = due.length ? '<section class="card" style="gap:0"><div class="card-head" style="margin-bottom:8px"><h2>Lease invoices to prepare</h2><button type="button" class="btn sm" data-fintab="leases">Lease billing</button></div>' +
+      due.map(function (d) {
+        return '<div class="rowlink"><span class="tag">' + esc(initials(d.school)) + '</span><span class="t"><b>' + esc(d.school) + '</b><span>' + esc(d.period) + ' · bill date ' + esc(fmtYmd(d.billDate)) + (d.late ? ' · past due to send' : '') + '</span></span>' +
+          '<b>' + usd(d.amount) + '</b><button type="button" class="btn sm primary" data-action="prepare-lease" data-terms="' + esc(d.termsId) + '" data-period="' + esc(d.period) + '">Prepare</button></div>';
+      }).join('') + '</section>' : '';
+    var rows = list.length ? list.map(function (i) {
+      var s = invStatus(i);
+      return '<tr><td style="white-space:nowrap"><b>' + esc(i.ref) + '</b>' + (i.qbNumber ? '<div class="small muted">QB #' + esc(i.qbNumber) + '</div>' : '') + '</td>' +
+        '<td><a class="plain" href="' + schoolHref(i.school) + '">' + esc(i.school) + '</a>' + (i.customer && i.customer !== i.school ? '<div class="small muted">' + esc(i.customer) + '</div>' : '') + '</td>' +
+        '<td>' + esc(i.type) + (i.period ? '<div class="small muted">' + esc(i.period) + '</div>' : '') + '</td><td style="white-space:nowrap">' + esc(i.po || '') + '</td>' +
+        '<td style="white-space:nowrap">' + esc(fmtYmd(i.date)) + '</td><td style="white-space:nowrap">' + esc(fmtYmd(i.due)) + '</td><td style="text-align:right;white-space:nowrap"><b>' + usd(i.total) + '</b></td>' +
+        '<td><span class="badge sm ' + (INV_CLASS[s] || 'b-mute') + '">' + esc(s) + '</span></td>' +
+        '<td style="text-align:right;white-space:nowrap">' + (i.status === 'Draft' ? '<button type="button" class="btn sm" data-action="inv-status" data-id="' + esc(i.id) + '" data-status="Ready">Mark ready</button> ' : '') +
+        (i.status === 'In QuickBooks' ? '<button type="button" class="btn sm" data-action="inv-status" data-id="' + esc(i.id) + '" data-status="Paid">Mark paid</button> ' : '') +
+        '<button type="button" class="btn sm" data-action="edit-invoice" data-id="' + esc(i.id) + '">' + icon('pencil', 14, 2) + 'Open</button></td></tr>';
+    }).join('') : '<tr><td colspan="9"><div class="empty">No invoices here yet.</div></td></tr>';
+    var readyCount = all.filter(function (i) { return i.status === 'Ready'; }).length;
+    return dueCard +
+      '<div class="row" style="justify-content:space-between"><div class="row" style="gap:6px">' + filters.map(function (x) {
+        var n = x === 'All' ? all.length : all.filter(function (i) { var s = invStatus(i); return x === 'Open' ? (s !== 'Paid' && s !== 'Void') : s === x; }).length;
+        return '<button type="button" class="pill sm" data-invfilter="' + x + '" aria-pressed="' + (st === x) + '">' + x + ' · ' + n + '</button>';
+      }).join('') + '</div><div class="row" style="gap:8px">' +
+      '<button type="button" class="btn" data-action="export-qb"' + (readyCount ? '' : ' disabled title="Mark invoices Ready first"') + '>' + icon('file', 16, 2) + 'Export Ready for QuickBooks' + (readyCount ? ' (' + readyCount + ')' : '') + '</button>' +
+      '<button type="button" class="btn primary" data-action="new-invoice">' + icon('plus', 16, 2) + 'New invoice</button></div></div>' +
+      '<section class="tablecard" aria-label="Invoices"><div class="scroll"><table><thead><tr><th>Invoice</th><th>School</th><th>Type</th><th>PO</th><th>Date</th><th>Due</th><th style="text-align:right">Total</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      '<div class="tfoot"><span>Pangia numbers invoices PG-0001 and up. Turn on custom transaction numbers in QuickBooks to keep them, or record the QuickBooks number on each invoice.</span></div></section>';
+  }
+
+  function financeLeases() {
+    var f = state.fin;
+    var termsBy = {};
+    (f.terms || []).forEach(function (t) { termsBy[t.contractKey] = t; });
+    var nextBill = function (t) { var d = (f.due || []).filter(function (x) { return x.termsId === t.id; })[0]; return d ? d.billDate : ''; };
+    var rows = (f.leases || []).map(function (l) {
+      var t = termsBy[l.key];
+      return '<tr><td><a class="plain" href="' + schoolHref(l.school) + '"><b>' + esc(l.school) + '</b></a><div class="small muted">' + esc(fmtYmd(l.start, { month: 'short', year: 'numeric' })) + ' to ' + esc(fmtYmd(l.end, { month: 'short', year: 'numeric' })) + '</div></td>' +
+        '<td><span class="badge sm ' + (CONTRACT_CLASS[l.status] || 'b-mute') + '">' + esc(l.status) + '</span></td>' +
+        '<td>' + (t ? '<b>' + usd(t.amount) + '</b> <span class="small muted">' + esc(t.frequency.toLowerCase()) + '</span>' : '<span class="small muted">Not set up</span>') + '</td>' +
+        '<td>' + (t ? esc(t.terms) : '') + '</td><td>' + (t && t.po ? esc(t.po) : '') + '</td>' +
+        '<td>' + (t ? (nextBill(t) ? esc(fmtYmd(nextBill(t))) : '<span class="small muted">Nothing due in 30 days</span>') : '') + '</td>' +
+        '<td style="text-align:right"><button type="button" class="btn sm' + (t ? '' : ' primary') + '" data-action="edit-terms" data-key="' + esc(l.key) + '">' + (t ? 'Edit billing' : 'Set up billing') + '</button></td></tr>';
+    }).join('');
+    return '<section class="tablecard" aria-label="Lease billing"><div class="scroll"><table><thead><tr><th>Lease</th><th>Contract</th><th>Billing</th><th>Terms</th><th>PO</th><th>Next bill</th><th><span class="sr-only">Edit</span></th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="7"><div class="empty">No lease contracts on file. Add them on the Contracts page with the type set to Lease.</div></td></tr>') + '</tbody></table></div>' +
+      '<div class="tfoot"><span>Once billing is set up, Pangia lists each lease invoice 30 days before its bill date under Invoices.</span></div></section>';
+  }
+
+  function exemptionRows() {
+    var f = state.fin;
+    var by = {};
+    (f.exemptions || []).forEach(function (e) { by[norm(e.school)] = e; });
+    var names = {};
+    state.data.schools.forEach(function (s) { names[s.name] = true; });
+    (f.exemptions || []).forEach(function (e) { names[e.school] = true; });
+    var soon = new Date(Date.now() + 60 * 86400000);
+    return Object.keys(names).sort().map(function (n) {
+      var e = by[norm(n)] || null;
+      var status = e ? e.status : 'Missing';
+      var exp = e && e.expires ? new Date(e.expires + 'T12:00:00') : null;
+      var expired = exp && exp < new Date();
+      var expiring = exp && !expired && exp < soon;
+      return { school: n, e: e, status: status, expired: expired, expiring: expiring, flag: status === 'Missing' || status === 'Requested' || expired || expiring };
+    });
+  }
+
+  function financeExemptions() {
+    var fl = state.exFilter || 'all';
+    var list = exemptionRows().filter(function (r) { return fl === 'all' || (fl === 'attention' ? r.flag : r.status === fl); });
+    var rows = list.map(function (r) {
+      var e = r.e || {};
+      var u = safeUrl(e.link);
+      return '<tr><td><a class="plain" href="' + schoolHref(r.school) + '"><b>' + esc(r.school) + '</b></a></td>' +
+        '<td><span class="badge sm ' + (EX_CLASS[r.status] || 'b-mute') + '">' + esc(r.status) + '</span></td><td>' + esc(e.state || '') + '</td>' +
+        '<td>' + (e.expires ? '<span' + (r.expired ? ' style="color:var(--bad, #B42318);font-weight:600"' : r.expiring ? ' style="color:var(--warn);font-weight:600"' : '') + '>' + esc(fmtYmd(e.expires)) + (r.expired ? ' (expired)' : r.expiring ? ' (soon)' : '') + '</span>' : '<span class="small muted">' + (e.status === 'Exempt' ? 'No expiry' : '') + '</span>') + '</td>' +
+        '<td>' + (u ? '<a class="plink" href="' + esc(u) + '" target="_blank" rel="noopener">' + icon('file', 14, 2) + '<span>Certificate</span>' + icon('ext', 12, 2) + '</a>' : '<span class="small muted">None</span>') + '</td>' +
+        '<td style="text-align:right"><button type="button" class="btn sm" data-action="edit-exemption" data-school="' + esc(r.school) + '">' + (r.e ? 'Edit' : 'Add') + '</button></td></tr>';
+    }).join('');
+    var all = exemptionRows();
+    var pill = function (k, label) { var n = k === 'all' ? all.length : k === 'attention' ? all.filter(function (r) { return r.flag; }).length : all.filter(function (r) { return r.status === k; }).length; return '<button type="button" class="pill sm" data-exfilter="' + k + '" aria-pressed="' + (fl === k) + '">' + label + ' · ' + n + '</button>'; };
+    return '<div class="row" style="gap:6px">' + pill('all', 'All schools') + pill('attention', 'Needs attention') + pill('Exempt', 'Exempt') + pill('Requested', 'Requested') + pill('Not exempt', 'Not exempt') + pill('Missing', 'Missing') + '</div>' +
+      '<section class="tablecard" aria-label="Tax exemptions"><div class="scroll"><table><thead><tr><th>School</th><th>Status</th><th>State</th><th>Expires</th><th>Certificate</th><th><span class="sr-only">Edit</span></th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="6"><div class="empty">No schools match.</div></td></tr>') + '</tbody></table></div>' +
+      '<div class="tfoot"><span>Schools marked Exempt are billed without sales tax. Certificates expiring within 60 days are flagged.</span></div></section>';
+  }
+
+  function billingCard(b, schoolName) {
+    if (!b || !can('finance')) return '';
+    var e = b.exemption;
+    var s = e ? e.status : 'Missing';
+    return '<section class="card" aria-labelledby="bl-h"><div class="card-head"><h2 id="bl-h">Billing</h2><a href="#/finance">Finance</a></div>' +
+      '<div class="row" style="gap:8px"><span class="small muted">Sales tax</span><span class="badge sm ' + (EX_CLASS[s] || 'b-mute') + '">' + esc(s) + '</span>' + (e && e.expires ? '<span class="small muted">until ' + esc(fmtYmd(e.expires)) + '</span>' : '') + '</div>' +
+      (b.terms && b.terms.length ? b.terms.map(function (t) { return '<div class="small"><b>' + usd(t.amount) + '</b> ' + esc(t.frequency.toLowerCase()) + ', ' + esc(t.terms) + (t.po ? ', PO ' + esc(t.po) : '') + '</div>'; }).join('') : '') +
+      (b.invoices && b.invoices.length ? b.invoices.slice(0, 5).map(function (i) { var st = invStatus(i); return '<div class="rowlink" style="padding:8px;margin:0 -8px"><span class="t"><b style="font-size:14px">' + esc(i.ref) + ' · ' + usd(i.total) + '</b><span>' + esc(i.type) + (i.period ? ', ' + esc(i.period) : '') + '</span></span><span class="badge sm ' + (INV_CLASS[st] || 'b-mute') + '">' + esc(st) + '</span></div>'; }).join('') : '<div class="small muted">No invoices yet.</div>') +
+      '<button type="button" class="btn sm" data-action="new-invoice" data-school="' + esc(schoolName) + '">' + icon('plus', 14, 2) + 'New invoice</button></section>';
+  }
+
+  function allCustomerNames() {
+    var names = {};
+    state.data.schools.forEach(function (s) { names[s.name] = true; });
+    (state.data.locations || []).forEach(function (l) { names[l.school] = true; });
+    return Object.keys(names).sort();
+  }
+
+  function lineRow(l, i) {
+    l = l || { item: '', description: '', qty: 1, rate: '' };
+    return '<div class="invline" data-line="' + i + '">' +
+      '<input aria-label="Item" name="li-item" placeholder="Item (QuickBooks product)" value="' + esc(l.item) + '">' +
+      '<input aria-label="Description" name="li-desc" placeholder="Description" value="' + esc(l.description) + '">' +
+      '<input aria-label="Quantity" name="li-qty" type="number" min="0" step="1" value="' + esc(l.qty) + '">' +
+      '<input aria-label="Rate" name="li-rate" type="number" min="0" step="0.01" placeholder="0.00" value="' + esc(l.rate) + '">' +
+      '<span class="li-amt">' + usd((Number(l.qty) || 0) * (Number(l.rate) || 0)) + '</span>' +
+      '<button type="button" class="copybtn" data-action="remove-line" aria-label="Remove line">' + icon('x', 15, 2) + '</button></div>';
+  }
+
+  function openInvoiceModal(inv, presetSchool) {
+    if (!can('finance')) return;
+    var f = state.fin || { options: {} };
+    var o = f.options || {};
+    var v = inv || { school: presetSchool || '', type: 'Product sale', date: todayYmd(), terms: 'Net 30', lines: [{ item: '', description: '', qty: 1, rate: '' }], taxable: false, taxRate: 0, status: 'Draft' };
+    if (!inv && presetSchool) {
+      var cu = (f.customers || []).filter(function (c) { return norm(c.school) === norm(presetSchool); })[0];
+      if (cu) { v.customer = cu.qbName; if (cu.terms) v.terms = cu.terms; }
+    }
+    var sel = function (name, list, cur) { return '<select id="i-' + name + '" name="' + name + '">' + list.map(function (x) { return '<option' + (x === cur ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('') + '</select>'; };
+    state.modal = true;
+    $('#palette-root').innerHTML = '<div class="overlay" data-action="modal-bg"><div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="im-h">' +
+      '<div class="card-head"><h2 id="im-h" style="font-family:var(--display);font-size:20px;font-weight:800">' + (inv ? 'Invoice ' + esc(inv.ref) : 'New invoice') + '</h2>' +
+      '<div class="row" style="gap:6px">' + (inv ? '<button type="button" class="btn sm" data-action="copy-invoice">' + icon('copy', 14, 2) + 'Copy for QuickBooks</button>' : '') +
+      '<button type="button" class="copybtn" data-action="close-modal" aria-label="Close">' + icon('x', 18, 2) + '</button></div></div>' +
+      '<form class="form" id="invoice-form" data-id="' + esc(inv ? inv.id : '') + '" novalidate><div class="fields three">' +
+      '<div class="field"><label for="i-school">School</label><input id="i-school" name="school" list="i-schools" value="' + esc(v.school) + '" autocomplete="off"><datalist id="i-schools">' + allCustomerNames().map(function (n) { return '<option value="' + esc(n) + '"></option>'; }).join('') + '</datalist></div>' +
+      '<div class="field"><label for="i-customer">QuickBooks customer <span class="muted" style="font-weight:400">(if different)</span></label><input id="i-customer" name="customer" value="' + esc(v.customer && v.customer !== v.school ? v.customer : '') + '"></div>' +
+      '<div class="field"><label for="i-type">Type</label>' + sel('type', ['Product sale', 'Lease payment'], v.type) + '</div>' +
+      '<div class="field"><label for="i-po">PO number</label><input id="i-po" name="po" value="' + esc(v.po || '') + '"></div>' +
+      '<div class="field"><label for="i-date">Invoice date</label><input id="i-date" name="date" type="date" value="' + esc(v.date) + '"></div>' +
+      '<div class="field"><label for="i-terms">Terms</label>' + sel('terms', o.terms || ['Net 30'], v.terms) + '</div>' +
+      '</div><div class="stack" style="gap:8px"><span class="legend-title">Lines</span><div class="invline head"><span>Item</span><span>Description</span><span>Qty</span><span>Rate</span><span style="text-align:right">Amount</span><span></span></div>' +
+      '<div id="inv-lines" class="stack" style="gap:8px">' + (v.lines.length ? v.lines : [{}]).map(lineRow).join('') + '</div>' +
+      '<button type="button" class="btn sm" data-action="add-line" style="align-self:flex-start">' + icon('plus', 14, 2) + 'Add line</button></div>' +
+      '<div class="invtotals"><label class="checkline"><input type="checkbox" name="taxable"' + (v.taxable ? ' checked' : '') + '> Charge sales tax</label>' +
+      '<div class="field" style="width:110px"><label for="i-rate" class="sr-only">Tax rate</label><input id="i-rate" name="taxRate" type="number" min="0" max="30" step="0.001" value="' + esc(v.taxRate || '') + '" placeholder="Rate %"></div>' +
+      '<div class="tot" id="inv-tot"></div></div>' +
+      '<div class="fields three"><div class="field" style="grid-column:span 2"><label for="i-memo">Memo <span class="muted" style="font-weight:400">(optional)</span></label><input id="i-memo" name="memo" value="' + esc(v.memo || '') + '"></div>' +
+      '<div class="field"><label for="i-status">Status</label>' + sel('status', o.statuses || ['Draft', 'Ready', 'In QuickBooks', 'Paid', 'Void'], v.status) + '</div>' +
+      '<div class="field"><label for="i-qb">QuickBooks invoice #</label><input id="i-qb" name="qbNumber" value="' + esc(v.qbNumber || '') + '" placeholder="After it is in QuickBooks"></div>' +
+      (inv && inv.period ? '<div class="field"><label>Lease period</label><input value="' + esc(inv.period) + '" readonly></div>' : '') +
+      '</div><div class="formfoot" style="border:0;padding:0"><span class="small muted">' + (inv && inv.sentAt ? 'In QuickBooks since ' + esc(fmtYmd(inv.sentAt)) + (inv.paidAt ? ', paid ' + esc(fmtYmd(inv.paidAt)) : '') : 'Mark it Ready when it is checked and good to go into QuickBooks.') + '</span>' +
+      '<button type="submit" class="btn primary">' + (inv ? 'Save invoice' : icon('plus', 16, 2) + 'Create invoice') + '</button></div></form></div></div>';
+    updateInvoiceTotals();
+    var first = $(presetSchool || inv ? '#i-po' : '#i-school');
+    if (first) first.focus();
+  }
+
+  function readInvoiceForm() {
+    var form = $('#invoice-form');
+    var lines = Array.prototype.slice.call(form.querySelectorAll('.invline[data-line]')).map(function (r) {
+      return { item: r.querySelector('[name="li-item"]').value.trim(), description: r.querySelector('[name="li-desc"]').value.trim(), qty: Number(r.querySelector('[name="li-qty"]').value) || 0, rate: Number(r.querySelector('[name="li-rate"]').value) || 0 };
+    }).filter(function (l) { return l.item || l.description; });
+    var el = form.elements;
+    return { id: form.getAttribute('data-id'), school: el.school.value.trim(), customer: el.customer.value.trim(), type: el.type.value, po: el.po.value.trim(), date: el.date.value, terms: el.terms.value,
+      lines: lines, taxable: el.taxable.checked, taxRate: Number(el.taxRate.value) || 0, memo: el.memo.value.trim(), status: el.status.value, qbNumber: el.qbNumber.value.trim() };
+  }
+
+  function updateInvoiceTotals() {
+    var box = $('#inv-tot');
+    if (!box) return;
+    var v = readInvoiceForm();
+    document.querySelectorAll('.invline[data-line]').forEach(function (r) {
+      var q = Number(r.querySelector('[name="li-qty"]').value) || 0, rt = Number(r.querySelector('[name="li-rate"]').value) || 0;
+      r.querySelector('.li-amt').textContent = usd(q * rt);
+    });
+    var sub = v.lines.reduce(function (a, l) { return a + l.qty * l.rate; }, 0);
+    var tax = v.taxable ? Math.round(sub * v.taxRate) / 100 : 0;
+    box.innerHTML = '<span>Subtotal <b>' + usd(sub) + '</b></span><span>Tax <b>' + usd(tax) + '</b></span><span class="grand">Total <b>' + usd(sub + tax) + '</b></span>';
+  }
+
+  function invoiceText(i) {
+    var lines = ['Invoice ' + i.ref + (i.qbNumber ? ' (QuickBooks #' + i.qbNumber + ')' : ''), 'Customer: ' + (i.customer || i.school), 'Invoice date: ' + fmtYmd(i.date), 'Due date: ' + fmtYmd(i.due) + ' (' + i.terms + ')'];
+    if (i.po) lines.push('PO: ' + i.po);
+    lines.push('');
+    i.lines.forEach(function (l) { lines.push(l.item + (l.description ? ' | ' + l.description : '') + ' | ' + l.qty + ' x ' + usd(l.rate) + ' = ' + usd(l.qty * l.rate)); });
+    lines.push('', 'Subtotal: ' + usd(i.subtotal) + (i.taxable ? ' | Tax (' + i.taxRate + '%): ' + usd(i.tax) : ' | Not taxable') + ' | Total: ' + usd(i.total));
+    if (i.memo) lines.push('Memo: ' + i.memo);
+    return lines.join('\n');
+  }
+
+  function exportQuickBooksCsv() {
+    var ready = (state.fin.invoices || []).filter(function (i) { return i.status === 'Ready'; });
+    if (!ready.length) return toast('Mark invoices Ready first.', true);
+    var q = function (v) { v = String(v == null ? '' : v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    var us = function (s) { var p = String(s || '').split('-'); return p.length === 3 ? p[1] + '/' + p[2] + '/' + p[0] : ''; };
+    var rows = [['InvoiceNo', 'Customer', 'InvoiceDate', 'DueDate', 'Terms', 'Memo', 'Item(Product/Service)', 'ItemDescription', 'ItemQuantity', 'ItemRate', 'ItemAmount', 'Taxable', 'TaxRate']];
+    ready.forEach(function (i) {
+      i.lines.forEach(function (l) {
+        rows.push([i.ref, i.customer || i.school, us(i.date), us(i.due), i.terms, [i.po ? 'PO ' + i.po : '', i.memo].filter(Boolean).join('. '), l.item, l.description, l.qty, l.rate.toFixed(2), (l.qty * l.rate).toFixed(2), i.taxable ? 'Y' : 'N', i.taxable ? i.taxRate + '%' : '']);
+      });
+    });
+    var csv = rows.map(function (r) { return r.map(q).join(','); }).join('\r\n');
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    a.download = 'pangia-invoices-' + todayYmd() + '.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    toast('Exported ' + ready.length + ' invoice' + (ready.length === 1 ? '' : 's') + '. Mark each one In QuickBooks after the import.');
+  }
+
+  function openTermsModal(key) {
+    var f = state.fin;
+    var l = (f.leases || []).filter(function (x) { return x.key === key; })[0];
+    if (!l) return;
+    var t = (f.terms || []).filter(function (x) { return x.contractKey === key; })[0] || { amount: '', frequency: 'Per semester', firstBill: l.start, terms: 'Net 30', item: 'Lease payment', po: '', memo: '' };
+    var c = (f.customers || []).filter(function (x) { return norm(x.school) === norm(l.school); })[0] || {};
+    var sel = function (name, list, cur) { return '<select id="t-' + name + '" name="' + name + '">' + list.map(function (x) { return '<option' + (x === cur ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('') + '</select>'; };
+    state.modal = true;
+    $('#palette-root').innerHTML = '<div class="overlay" data-action="modal-bg"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="tm-h">' +
+      '<div class="card-head"><div style="display:flex;flex-direction:column;gap:4px"><h2 id="tm-h" style="font-family:var(--display);font-size:20px;font-weight:800">Lease billing</h2><span class="small muted">' + esc(l.school) + ', ' + esc(fmtYmd(l.start)) + ' to ' + esc(fmtYmd(l.end)) + '</span></div>' +
+      '<button type="button" class="copybtn" data-action="close-modal" aria-label="Close">' + icon('x', 18, 2) + '</button></div>' +
+      '<form class="form" id="terms-form" data-key="' + esc(key) + '" data-school="' + esc(l.school) + '" novalidate><div class="fields">' +
+      '<div class="field"><label for="t-amount">Amount per bill</label><input id="t-amount" name="amount" type="number" min="0" step="0.01" value="' + esc(t.amount) + '"></div>' +
+      '<div class="field"><label for="t-frequency">Billed</label>' + sel('frequency', (f.options || {}).frequencies || ['Annual'], t.frequency) + '</div>' +
+      '<div class="field"><label for="t-firstBill">First bill date</label><input id="t-firstBill" name="firstBill" type="date" value="' + esc(t.firstBill) + '"></div>' +
+      '<div class="field"><label for="t-terms">Terms</label>' + sel('terms', (f.options || {}).terms || ['Net 30'], t.terms) + '</div>' +
+      '<div class="field"><label for="t-item">QuickBooks item</label><input id="t-item" name="item" value="' + esc(t.item) + '"></div>' +
+      '<div class="field"><label for="t-po">PO number <span class="muted" style="font-weight:400">(optional)</span></label><input id="t-po" name="po" value="' + esc(t.po) + '"></div>' +
+      '<div class="field full"><label for="t-memo">Memo on each invoice <span class="muted" style="font-weight:400">(optional)</span></label><input id="t-memo" name="memo" value="' + esc(t.memo) + '"></div>' +
+      '<span class="legend-title">Customer in QuickBooks</span>' +
+      '<div class="field"><label for="t-qb">QuickBooks customer name</label><input id="t-qb" name="qbName" value="' + esc(c.qbName || '') + '" placeholder="' + esc(l.school) + '"></div>' +
+      '<div class="field"><label for="t-email">Bill-to email</label><input id="t-email" name="billToEmail" type="email" value="' + esc(c.billToEmail || '') + '"></div>' +
+      '</div><div class="formfoot" style="border:0;padding:0"><span class="small muted">The QuickBooks name must match the customer exactly, or the import creates a new one.</span>' +
+      '<button type="submit" class="btn primary">Save billing</button></div></form></div></div>';
+    $('#t-amount').focus();
+  }
+
+  function openExemptionModal(school) {
+    var f = state.fin;
+    var e = (f.exemptions || []).filter(function (x) { return norm(x.school) === norm(school); })[0] || { status: 'Requested' };
+    var sel = function (name, list, cur) { return '<select id="x-' + name + '" name="' + name + '">' + list.map(function (x) { return '<option' + (x === cur ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('') + '</select>'; };
+    var loc = (state.data.locations || []).filter(function (l) { return norm(l.school) === norm(school); })[0];
+    state.modal = true;
+    $('#palette-root').innerHTML = '<div class="overlay" data-action="modal-bg"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="xm-h">' +
+      '<div class="card-head"><div style="display:flex;flex-direction:column;gap:4px"><h2 id="xm-h" style="font-family:var(--display);font-size:20px;font-weight:800">Tax exemption</h2><span class="small muted">' + esc(school) + '</span></div>' +
+      '<button type="button" class="copybtn" data-action="close-modal" aria-label="Close">' + icon('x', 18, 2) + '</button></div>' +
+      '<form class="form" id="exemption-form" data-id="' + esc(e.id || '') + '" data-school="' + esc(school) + '" novalidate><div class="fields">' +
+      '<div class="field"><label for="x-status">Status</label>' + sel('status', (f.options || {}).exemptStatuses || ['Exempt', 'Requested', 'Not exempt'], e.status) + '</div>' +
+      '<div class="field"><label for="x-state">State</label><input id="x-state" name="state" value="' + esc(e.state || (loc ? loc.state : '')) + '"></div>' +
+      '<div class="field full"><label for="x-link">Certificate link</label><input id="x-link" name="link" type="url" value="' + esc(e.link || '') + '" placeholder="SharePoint or Google Drive link to the signed certificate"></div>' +
+      '<div class="field"><label for="x-number">Exemption number <span class="muted" style="font-weight:400">(optional)</span></label><input id="x-number" name="number" value="' + esc(e.number || '') + '"></div>' +
+      '<div class="field"><label for="x-expires">Expires <span class="muted" style="font-weight:400">(optional)</span></label><input id="x-expires" name="expires" type="date" value="' + esc(e.expires || '') + '"></div>' +
+      '<div class="field full"><label for="x-notes">Notes <span class="muted" style="font-weight:400">(optional)</span></label><input id="x-notes" name="notes" value="' + esc(e.notes || '') + '"></div>' +
+      '</div><div class="formfoot" style="border:0;padding:0"><span class="small muted">Keep the certificate itself in SharePoint and link it here.</span><button type="submit" class="btn primary">Save</button></div></form></div></div>';
+  }
+
+  function finSave(action, payload, btn, label, msg) {
+    btn.disabled = true; btn.textContent = 'Saving...';
+    return api(action, payload).then(function (f) {
+      state.fin = f;
+      closeModal();
+      toast(msg);
+      var r = parseRoute();
+      if (r.name === 'finance') paintFinance();
+      else if (r.name === 'school') { delete state.schoolCache[r.school]; loadSchool(r.school); }
+    }).catch(function (err) {
+      btn.disabled = false; btn.textContent = label;
+      if (err.code !== 'auth_expired') toast(err.message, true);
+    });
+  }
+
+  /* ---------------------------------------------------------------- */
   /* Command palette (Ctrl+K)                                         */
   /* ---------------------------------------------------------------- */
 
@@ -1844,6 +2179,12 @@
     if (r !== 'School Admin') items.push({ group: 'Go to', tag: icon('home', 16), label: 'Home', sub: 'Your overview', href: '#/', raw: true });
     if (can('assets')) items.push({ group: 'Go to', tag: icon('library', 16), label: 'Asset Library', sub: 'Spec sheets, SOPs and marketing files', href: '#/assets', raw: true });
     if (can('assets.edit')) items.push({ group: 'Actions', tag: icon('plus', 16), label: 'Add a file to the library', sub: 'Asset Library', action: 'add-asset', raw: true });
+    if (can('finance')) {
+      items.push({ group: 'Go to', tag: icon('dollar', 16), label: 'Invoices and tax', sub: 'Finance', href: '#/finance', raw: true });
+      items.push({ group: 'Go to', tag: icon('dollar', 16), label: 'Lease billing', sub: 'Finance', href: '#/finance?tab=leases', raw: true });
+      items.push({ group: 'Go to', tag: icon('dollar', 16), label: 'Tax exemptions', sub: 'Finance', href: '#/finance?tab=exemptions', raw: true });
+      items.push({ group: 'Actions', tag: icon('plus', 16), label: 'New invoice', sub: 'Finance', action: 'new-invoice', raw: true });
+    }
     if (can('directory')) items.push({ group: 'Go to', tag: icon('school', 16), label: 'Schools', sub: 'The full directory', href: '#/schools', raw: true });
     if (can('contacts')) items.push({ group: 'Go to', tag: icon('users', 16), label: 'Contacts', sub: 'Everyone we work with at each school', href: '#/contacts', raw: true });
     if (can('map')) items.push({ group: 'Go to', tag: icon('map', 16), label: 'Map', sub: 'Schools and storage on a map', href: '#/map', raw: true });
@@ -1955,6 +2296,32 @@
       return;
     }
     if (name === 'add-asset') return openAssetModal(null);
+    if (name === 'new-invoice') { var ps = (el && el.getAttribute('data-school')) || currentSchoolName(); return loadFinance(false).then(function () { openInvoiceModal(null, ps); }); }
+    if (name === 'edit-invoice' && el) { var iv = (state.fin.invoices || []).filter(function (x) { return x.id === el.getAttribute('data-id'); })[0]; if (iv) openInvoiceModal(iv); return; }
+    if (name === 'add-line') { var box = $('#inv-lines'); if (box) { box.insertAdjacentHTML('beforeend', lineRow(null, box.children.length)); updateInvoiceTotals(); } return; }
+    if (name === 'remove-line' && el) { var ln = el.closest('.invline'); if (ln && document.querySelectorAll('.invline[data-line]').length > 1) ln.remove(); updateInvoiceTotals(); return; }
+    if (name === 'copy-invoice') {
+      var cid = $('#invoice-form').getAttribute('data-id');
+      var ci = (state.fin.invoices || []).filter(function (x) { return x.id === cid; })[0];
+      if (ci) { var txt = invoiceText(ci); if (navigator.clipboard) navigator.clipboard.writeText(txt).then(function () { toast('Invoice copied'); }, function () { toast(txt); }); }
+      return;
+    }
+    if (name === 'export-qb') return exportQuickBooksCsv();
+    if (name === 'inv-status' && el) {
+      var si = (state.fin.invoices || []).filter(function (x) { return x.id === el.getAttribute('data-id'); })[0];
+      if (!si) return;
+      el.disabled = true;
+      return api('saveInvoice', Object.assign({}, si, { status: el.getAttribute('data-status') })).then(function (f) { state.fin = f; paintFinance(); toast(si.ref + ' marked ' + el.getAttribute('data-status')); })
+        .catch(function (err) { el.disabled = false; if (err.code !== 'auth_expired') toast(err.message, true); });
+    }
+    if (name === 'prepare-lease' && el) {
+      el.disabled = true; el.textContent = 'Preparing...';
+      return api('prepareLeaseInvoice', { termsId: el.getAttribute('data-terms'), period: el.getAttribute('data-period') }).then(function (f) {
+        state.fin = f; state.finTab = 'invoices'; state.finStatus = 'Open'; paintFinance(); toast('Draft invoice created. Check it, then mark it Ready.');
+      }).catch(function (err) { el.disabled = false; el.textContent = 'Prepare'; if (err.code !== 'auth_expired') toast(err.message, true); });
+    }
+    if (name === 'edit-terms' && el) return openTermsModal(el.getAttribute('data-key'));
+    if (name === 'edit-exemption' && el) return openExemptionModal(el.getAttribute('data-school'));
     if (name === 'edit-asset' && el) {
       var aid = el.getAttribute('data-id');
       var av = assetList().filter(function (x) { return x.id === aid; })[0];
@@ -2016,6 +2383,12 @@
       e.preventDefault();
       return doAction(act.getAttribute('data-action'), act);
     }
+    var ft = e.target.closest('[data-fintab]');
+    if (ft) { state.finTab = ft.getAttribute('data-fintab'); return paintFinance(); }
+    var ivf = e.target.closest('[data-invfilter]');
+    if (ivf) { state.finStatus = ivf.getAttribute('data-invfilter'); return paintFinance(); }
+    var exf = e.target.closest('[data-exfilter]');
+    if (exf) { state.exFilter = exf.getAttribute('data-exfilter'); return paintFinance(); }
     var aa = e.target.closest('[data-assetaud]');
     if (aa) { state.assets.audience = aa.getAttribute('data-assetaud'); return repaintAssets(); }
     var ac = e.target.closest('[data-assetcat]');
@@ -2053,6 +2426,8 @@
       state.search = e.target.value;
       var rows = $('#school-rows');
       if (rows) rows.innerHTML = schoolRows();
+    } else if (e.target.closest && e.target.closest('#invoice-form')) {
+      updateInvoiceTotals();
     } else if (e.target.id === 'asset-search') {
       state.assets.q = e.target.value;
       var ab = $('#asset-results');
@@ -2075,6 +2450,11 @@
   });
 
   document.addEventListener('change', function (e) {
+    if (e.target.closest && e.target.closest('#invoice-form')) updateInvoiceTotals();
+    if (e.target.id === 'i-school' && !$('#invoice-form').getAttribute('data-id')) {
+      var cu = ((state.fin || {}).customers || []).filter(function (c) { return norm(c.school) === norm(e.target.value); })[0];
+      if (cu) { if (cu.qbName) $('#i-customer').value = cu.qbName; if (cu.terms) $('#i-terms').value = cu.terms; }
+    }
     if (e.target.id === 'contact-school') {
       state.contactSchool = e.target.value;
       repaintContacts();
@@ -2083,6 +2463,34 @@
 
   document.addEventListener('submit', function (e) {
     var form = e.target;
+    if (form.id === 'invoice-form') {
+      e.preventDefault();
+      var iv2 = readInvoiceForm();
+      if (!iv2.school) { toast('Pick the school or customer.', true); return; }
+      if (!iv2.lines.some(function (l) { return l.qty > 0; })) { toast('Add at least one line with a quantity.', true); return; }
+      if ((iv2.status === 'In QuickBooks' || iv2.status === 'Paid') && !iv2.qbNumber) toast('Tip: add the QuickBooks invoice number so it is easy to find later.');
+      var ib = form.querySelector('[type="submit"]');
+      return finSave('saveInvoice', iv2, ib, iv2.id ? 'Save invoice' : 'Create invoice', iv2.id ? 'Invoice saved' : 'Invoice created');
+    }
+    if (form.id === 'terms-form') {
+      e.preventDefault();
+      var te = form.elements;
+      var tp = { contractKey: form.getAttribute('data-key'), amount: te.amount.value, frequency: te.frequency.value, firstBill: te.firstBill.value, terms: te.terms.value, item: te.item.value.trim(), po: te.po.value.trim(), memo: te.memo.value.trim() };
+      if (!(Number(tp.amount) > 0)) { toast('Enter the amount billed each period.', true); return; }
+      if (!tp.firstBill) { toast('Pick the first bill date.', true); return; }
+      var tb = form.querySelector('[type="submit"]');
+      var cust = { school: form.getAttribute('data-school'), qbName: te.qbName.value.trim(), billToEmail: te.billToEmail.value.trim(), terms: tp.terms };
+      tb.disabled = true; tb.textContent = 'Saving...';
+      return api('saveCustomer', cust).then(function () { tb.disabled = false; return finSave('saveBillingTerms', tp, tb, 'Save billing', 'Lease billing saved'); })
+        .catch(function (err) { tb.disabled = false; tb.textContent = 'Save billing'; if (err.code !== 'auth_expired') toast(err.message, true); });
+    }
+    if (form.id === 'exemption-form') {
+      e.preventDefault();
+      var xe = form.elements;
+      var xp = { id: form.getAttribute('data-id'), school: form.getAttribute('data-school'), status: xe.status.value, state: xe.state.value.trim(), link: xe.link.value.trim(), number: xe.number.value.trim(), expires: xe.expires.value, notes: xe.notes.value.trim() };
+      if (xp.link && !/^https:\/\//i.test(xp.link)) { toast('The certificate link must start with https://', true); return; }
+      return finSave('saveExemption', xp, form.querySelector('[type="submit"]'), 'Save', 'Exemption saved');
+    }
     if (form.id === 'asset-modal-form') {
       e.preventDefault();
       var fe = form.elements;

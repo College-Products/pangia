@@ -485,3 +485,22 @@ a.copybtn { text-decoration: none; }
 .pillcheck { height: 34px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: 999px; font-size: 13px; font-weight: 500; }
 .pillcheck:has(input:checked) { border-color: var(--accent); background: var(--chip); color: var(--chip-ink); font-weight: 600; }
 .asset .badge { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- Finance ---------- */
+.modal.wide { max-width: 920px; }
+.fields.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.invline { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 2fr) 72px 110px 110px 32px; gap: 8px; align-items: center; }
+.invline input { height: 40px; border: 1px solid var(--border-strong); border-radius: 10px; padding: 0 10px; font: inherit; font-size: 14px; background: var(--surface); color: var(--ink); min-width: 0; width: 100%; }
+.invline input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+.invline.head { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.li-amt { text-align: right; font-weight: 600; font-size: 14px; }
+.invtotals { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 14px 16px; background: var(--surface2); border-radius: 14px; }
+.invtotals .tot { margin-left: auto; display: flex; gap: 18px; font-size: 13px; color: var(--muted); }
+.invtotals .tot b { color: var(--ink); font-size: 14px; }
+.invtotals .tot .grand b { font-size: 18px; font-family: var(--display); }
+.btn[disabled]:not(.spin) { cursor: not-allowed; }
+@media (max-width: 860px) {
+  .fields.three { grid-template-columns: 1fr; }
+  .invline { grid-template-columns: 1fr 1fr; }
+  .invline.head { display: none; }
+}
