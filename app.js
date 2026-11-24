@@ -21,6 +21,11 @@
     finTab: null,
     finStatus: 'Open',
     exFilter: 'all',
+    tax: null,
+    taxKind: 'quarter',
+    taxPeriod: '',
+    ye: null,
+    yeYear: null,
     palette: { open: false, query: '', index: 0, items: [] }
   };
 
@@ -1833,7 +1838,7 @@
 
   function viewFinance(query) {
     state.finTab = query.tab || state.finTab || 'invoices';
-    return '<header class="pagehead"><div class="titles"><h1 class="h1">Finance</h1><p class="sub">Prepare invoices for QuickBooks, keep lease billing on schedule and track tax exemption certificates.</p></div></header>' +
+    return '<header class="pagehead"><div class="titles"><h1 class="h1">Finance</h1><p class="sub">Prepare invoices for QuickBooks, keep lease billing on schedule, and get sales tax and year-end numbers ready to file.</p></div></header>' +
       '<div id="fin-body">' + (state.fin ? financeBody() : '<div class="kpis"><div class="skel" style="height:118px"></div><div class="skel" style="height:118px"></div><div class="skel" style="height:118px"></div><div class="skel" style="height:118px"></div></div><div class="skel" style="height:360px;margin-top:20px"></div>') + '</div>';
   }
 
@@ -1853,8 +1858,8 @@
     var paid30 = inv.filter(function (i) { return i.status === 'Paid' && i.paidAt && new Date(i.paidAt + 'T12:00:00') >= month; });
     var sum = function (l) { return l.reduce(function (a, i) { return a + i.total; }, 0); };
     var kpi = function (label, value, note, tab) { return '<button type="button" class="kpi kpibtn" data-fintab="' + tab + '"><span class="label">' + esc(label) + '</span><span class="value">' + esc(value) + '</span>' + (note ? '<span class="small muted">' + esc(note) + '</span>' : '') + '</button>'; };
-    var tabs = [['invoices', 'Invoices', inv.filter(function (i) { return i.status !== 'Paid' && i.status !== 'Void'; }).length], ['leases', 'Lease billing', (f.due || []).length], ['exemptions', 'Tax exemptions', exemptionRows().filter(function (r) { return r.flag; }).length]];
-    var body = state.finTab === 'leases' ? financeLeases() : state.finTab === 'exemptions' ? financeExemptions() : financeInvoices();
+    var tabs = [['invoices', 'Invoices', inv.filter(function (i) { return i.status !== 'Paid' && i.status !== 'Void'; }).length], ['leases', 'Lease billing', (f.due || []).length], ['tax', 'Sales tax', 0], ['exemptions', 'Tax exemptions', exemptionRows().filter(function (r) { return r.flag; }).length], ['yearend', 'Year-end', 0]];
+    var body = state.finTab === 'leases' ? financeLeases() : state.finTab === 'exemptions' ? financeExemptions() : state.finTab === 'tax' ? financeTax() : state.finTab === 'yearend' ? financeYearEnd() : financeInvoices();
     return '<section class="kpis" aria-label="Finance summary">' +
       kpi('Lease invoices to prepare', String((f.due || []).length), (f.due || []).some(function (d) { return d.late; }) ? 'Some are past their bill date' : 'Next 30 days', 'leases') +
       kpi('Ready for QuickBooks', usd(sum(ready)), ready.length + ' invoice' + (ready.length === 1 ? '' : 's'), 'invoices') +
@@ -2140,6 +2145,168 @@
   }
 
   /* ---------------------------------------------------------------- */
+  /* Finance: sales tax and year-end                                  */
+  /* ---------------------------------------------------------------- */
+
+  function loadTax() {
+    var kind = state.taxKind || 'quarter';
+    return api('salesTax', { kind: kind }).then(function (t) { state.tax = t; if (!state.taxPeriod || !t.periods.some(function (p) { return p.period === state.taxPeriod; })) state.taxPeriod = t.periods[0] ? t.periods[0].period : ''; return t; });
+  }
+  function loadYearEnd() {
+    var y = state.yeYear || new Date().getFullYear();
+    return api('yearEnd', { year: y }).then(function (r) { state.ye = r; return r; });
+  }
+
+  function periodName(p) {
+    if (/^\d{4}-Q\d$/.test(p)) return 'Q' + p.slice(6) + ' ' + p.slice(0, 4);
+    if (/^\d{4}-\d{2}$/.test(p)) return fmtDate(p + '-15T12:00:00', { month: 'long', year: 'numeric' });
+    return p;
+  }
+
+  function downloadCsv(name, rows) {
+    var q = function (v) { v = String(v == null ? '' : v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([rows.map(function (r) { return r.map(q).join(','); }).join('\r\n')], { type: 'text/csv' }));
+    a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  function financeTax() {
+    var t = state.tax;
+    if (!t) { loadTax().then(paintFinance).catch(function (err) { if (err.code !== 'auth_expired') toast(err.message, true); }); return '<div class="skel" style="height:420px"></div>'; }
+    var names = t.stateNames || {};
+    var registered = {};
+    (t.taxStates || []).forEach(function (s) { if (s.registered) registered[s.state] = true; });
+    var per = (t.periods || []).filter(function (p) { return p.period === state.taxPeriod; })[0];
+    var kinds = [['month', 'Month'], ['quarter', 'Quarter'], ['year', 'Year']].map(function (k) { return '<button type="button" class="seg" data-taxkind="' + k[0] + '" aria-pressed="' + ((state.taxKind || 'quarter') === k[0]) + '">' + k[1] + '</button>'; }).join('');
+    var opts = (t.periods || []).map(function (p) { return '<option value="' + esc(p.period) + '"' + (p.period === state.taxPeriod ? ' selected' : '') + '>' + esc(periodName(p.period)) + '</option>'; }).join('');
+    var today = todayYmd();
+    var cal = (t.calendar || []).length ? (t.calendar || []).map(function (c) {
+      return '<div class="filing"><div class="card-head"><b>' + esc(c.name) + '</b><span class="small muted">' + esc(c.frequency) + ', due day ' + c.dueDay + '</span></div><div class="row" style="gap:6px">' +
+        c.periods.map(function (p) {
+          var cls = p.filed ? 'b-good' : !p.closed ? 'b-mute' : p.due < today ? 'b-bad' : 'b-warn';
+          var label = p.filed ? periodName(p.period) + ': filed' : !p.closed ? periodName(p.period) + ': open' : periodName(p.period) + ': due ' + fmtYmd(p.due, { month: 'short', day: 'numeric' });
+          return '<button type="button" class="badge ' + cls + ' filebtn" data-action="file-period" data-state="' + esc(c.state) + '" data-period="' + esc(p.period) + '"' + (p.closed || p.filed ? '' : ' disabled') + ' title="' + (p.filed ? 'Filed ' + esc(fmtYmd(p.filed.filedOn)) + (p.filed.confirmation ? ', ' + esc(p.filed.confirmation) : '') : p.closed ? 'Mark as filed' : 'Period still open') + '">' + esc(label) + '</button>';
+        }).join('') + '</div></div>';
+    }).join('') : '<div class="empty">Add the states where College Products is registered to collect sales tax, and Pangia will track each filing deadline.</div>';
+    var rows = per ? per.states : [];
+    var tot = { orders: 0, gross: 0, taxable: 0, exempt: 0, tax: 0, refunds: 0, refundTax: 0, b2bTaxable: 0, b2bExempt: 0, b2bTax: 0 };
+    rows.forEach(function (s) { Object.keys(tot).forEach(function (k) { tot[k] += s[k] || 0; }); });
+    var cell = function (v) { return '<td style="text-align:right;white-space:nowrap">' + usd(v) + '</td>'; };
+    var tr = function (s, isTotal) {
+      var nm = isTotal ? 'All states' : s.state === '??' ? 'No state on order' : (names[s.state] || s.state);
+      return '<tr' + (isTotal ? ' class="totrow"' : '') + '><td>' + (isTotal ? '<b>' + nm + '</b>' : esc(nm) + (registered[s.state] ? ' <span class="badge sm b-info">Registered</span>' : '')) + '</td>' +
+        '<td style="text-align:right">' + fmtNum(s.orders) + '</td>' + cell(s.gross) + cell(s.taxable) + cell(s.exempt) + cell(s.tax) + cell(s.refunds) + cell(s.refundTax) +
+        '<td style="text-align:right;white-space:nowrap"><b>' + usd((s.tax || 0) - (s.refundTax || 0) + (s.b2bTax || 0)) + '</b></td>' + cell(s.b2bTaxable) + cell(s.b2bExempt) + '</tr>';
+    };
+    return '<div class="row" style="justify-content:space-between"><div class="row" style="gap:10px"><div class="segbar" role="group" aria-label="Period length">' + kinds + '</div>' +
+      '<div class="field" style="width:220px"><label for="tax-period" class="sr-only">Period</label><select id="tax-period">' + opts + '</select></div></div>' +
+      '<div class="row" style="gap:8px"><span class="small muted">' + fmtNum(t.ordersOnFile) + ' web orders on file' + (t.syncedAt ? ', synced ' + esc(relTime(t.syncedAt)) : ', not synced yet') + '</span>' +
+      '<button type="button" class="btn sm" data-action="sync-sales">' + icon('refresh', 14, 2) + 'Sync WooCommerce</button>' +
+      '<button type="button" class="btn sm" data-action="export-tax"' + (per ? '' : ' disabled') + '>' + icon('file', 14, 2) + 'Export CSV</button></div></div>' +
+      '<section class="card" style="gap:12px"><div class="card-head"><h2>Filing calendar</h2><button type="button" class="btn sm" data-action="tax-states">' + icon('pencil', 14, 2) + 'Manage states</button></div><div class="filings">' + cal + '</div></section>' +
+      '<section class="tablecard" aria-label="Sales tax by state"><div class="scroll"><table class="taxtable"><thead><tr><th>State</th><th style="text-align:right">Web orders</th><th style="text-align:right">Gross sales</th><th style="text-align:right">Taxable</th><th style="text-align:right">Non-taxable</th><th style="text-align:right">Tax collected</th><th style="text-align:right">Refunds</th><th style="text-align:right">Tax refunded</th><th style="text-align:right">Net tax due</th><th style="text-align:right">B2B taxable</th><th style="text-align:right">B2B exempt</th></tr></thead><tbody>' +
+      (rows.length ? rows.map(function (s) { return tr(s, false); }).join('') + tr(tot, true) : '<tr><td colspan="11"><div class="empty">' + (t.ordersOnFile ? 'No sales in this period.' : 'No sales yet. Click Sync WooCommerce to pull orders in.') + '</div></td></tr>') + '</tbody></table></div>' +
+      '<div class="tfoot"><span>Web orders from WooCommerce by shipping state, plus B2B invoices from Pangia by school state. Net tax due includes B2B tax. Check the totals against your tax software before filing.</span></div></section>';
+  }
+
+  function exportTaxCsv() {
+    var t = state.tax, per = (t.periods || []).filter(function (p) { return p.period === state.taxPeriod; })[0];
+    if (!per) return;
+    var rows = [['Period', 'State', 'Web orders', 'Gross sales', 'Taxable sales', 'Non-taxable sales', 'Tax collected', 'Refunds', 'Tax refunded', 'Net tax due', 'B2B taxable', 'B2B exempt', 'B2B tax']];
+    per.states.forEach(function (s) { rows.push([periodName(per.period), (t.stateNames || {})[s.state] || s.state, s.orders, s.gross, s.taxable, s.exempt, s.tax, s.refunds, s.refundTax, Math.round((s.tax - s.refundTax + s.b2bTax) * 100) / 100, s.b2bTaxable, s.b2bExempt, s.b2bTax]); });
+    downloadCsv('pangia-sales-tax-' + per.period + '.csv', rows);
+  }
+
+  function openFilingModal(st, period) {
+    var c = (state.tax.calendar || []).filter(function (x) { return x.state === st; })[0];
+    var p = c && c.periods.filter(function (x) { return x.period === period; })[0];
+    if (!p) return;
+    var f = p.filed || {};
+    var perData = (state.tax.periods || []).filter(function (x) { return x.period === period; })[0];
+    var row = perData && perData.states.filter(function (x) { return x.state === st; })[0];
+    var est = row ? Math.round((row.tax - row.refundTax + row.b2bTax) * 100) / 100 : 0;
+    state.modal = true;
+    $('#palette-root').innerHTML = '<div class="overlay" data-action="modal-bg"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="fm-h">' +
+      '<div class="card-head"><div style="display:flex;flex-direction:column;gap:4px"><h2 id="fm-h" style="font-family:var(--display);font-size:20px;font-weight:800">' + esc(c.name) + ' sales tax, ' + esc(periodName(period)) + '</h2>' +
+      '<span class="small muted">Due ' + esc(fmtYmd(p.due)) + (row ? '. Pangia shows ' + usd(est) + ' net tax for this period.' : '') + '</span></div>' +
+      '<button type="button" class="copybtn" data-action="close-modal" aria-label="Close">' + icon('x', 18, 2) + '</button></div>' +
+      '<form class="form" id="filing-form" data-state="' + esc(st) + '" data-period="' + esc(period) + '" novalidate><div class="fields">' +
+      '<div class="field"><label for="f-on">Filed on</label><input id="f-on" name="filedOn" type="date" value="' + esc(f.filedOn || todayYmd()) + '"></div>' +
+      '<div class="field"><label for="f-amt">Amount paid</label><input id="f-amt" name="amount" type="number" step="0.01" min="0" value="' + esc(f.amount != null ? f.amount : est) + '"></div>' +
+      '<div class="field full"><label for="f-conf">Confirmation number <span class="muted" style="font-weight:400">(optional)</span></label><input id="f-conf" name="confirmation" value="' + esc(f.confirmation || '') + '"></div>' +
+      '<div class="field full"><label for="f-notes">Notes <span class="muted" style="font-weight:400">(optional)</span></label><input id="f-notes" name="notes" value="' + esc(f.notes || '') + '"></div>' +
+      '</div><div class="formfoot" style="border:0;padding:0">' + (p.filed ? '<button type="button" class="btn sm" data-action="unfile">Undo filed</button>' : '<span></span>') +
+      '<button type="submit" class="btn primary">' + (p.filed ? 'Save' : 'Mark as filed') + '</button></div></form></div></div>';
+  }
+
+  function openTaxStatesModal() {
+    var t = state.tax;
+    var names = t.stateNames || {};
+    var have = {};
+    (t.taxStates || []).forEach(function (s) { have[s.state] = s; });
+    var rowsHtml = (t.taxStates || []).map(function (s) {
+      return '<div class="taxstate" data-st="' + esc(s.state) + '"><b>' + esc(names[s.state] || s.state) + '</b>' +
+        '<select name="frequency">' + ['Monthly', 'Quarterly', 'Annual'].map(function (fq) { return '<option' + (fq === s.frequency ? ' selected' : '') + '>' + fq + '</option>'; }).join('') + '</select>' +
+        '<label class="small muted">Due day <input name="dueDay" type="number" min="1" max="31" value="' + s.dueDay + '"></label>' +
+        '<button type="button" class="btn sm" data-action="save-taxstate">Save</button><button type="button" class="copybtn" data-action="remove-taxstate" aria-label="Remove ' + esc(names[s.state] || s.state) + '">' + icon('x', 15, 2) + '</button></div>';
+    }).join('');
+    state.modal = true;
+    $('#palette-root').innerHTML = '<div class="overlay" data-action="modal-bg"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="ts-h">' +
+      '<div class="card-head"><h2 id="ts-h" style="font-family:var(--display);font-size:20px;font-weight:800">States where we file sales tax</h2><button type="button" class="copybtn" data-action="close-modal" aria-label="Close">' + icon('x', 18, 2) + '</button></div>' +
+      '<div class="stack" style="gap:8px">' + (rowsHtml || '<div class="empty">No states yet.</div>') + '</div>' +
+      '<div class="taxstate add"><select id="ts-new"><option value="">Add a state...</option>' + Object.keys(names).filter(function (k) { return !have[k]; }).map(function (k) { return '<option value="' + k + '">' + esc(names[k]) + '</option>'; }).join('') + '</select>' +
+      '<select id="ts-freq"><option>Monthly</option><option selected>Quarterly</option><option>Annual</option></select><label class="small muted">Due day <input id="ts-day" type="number" min="1" max="31" value="20"></label>' +
+      '<button type="button" class="btn sm primary" data-action="add-taxstate">Add</button></div>' +
+      '<p class="small muted" style="margin:0">Use the due day your state gives you, for example 20 for the 20th of the month after the period ends. Use 31 for the last day of that month.</p></div></div>';
+  }
+
+  function taxStateCall(payload) {
+    payload.kind = state.taxKind || 'quarter';
+    return api('saveTaxState', payload).then(function (t) { state.tax = t; openTaxStatesModal(); paintFinance(); toast('Saved'); })
+      .catch(function (err) { if (err.code !== 'auth_expired') toast(err.message, true); });
+  }
+
+  function financeYearEnd() {
+    var r = state.ye;
+    if (!r) { loadYearEnd().then(paintFinance).catch(function (err) { if (err.code !== 'auth_expired') toast(err.message, true); }); return '<div class="skel" style="height:420px"></div>'; }
+    var t = r.totals;
+    var total = t.b2c + t.lease + t.purchase;
+    var y0 = new Date().getFullYear();
+    var years = [y0, y0 - 1, y0 - 2].map(function (y) { return '<option' + (String(y) === r.year ? ' selected' : '') + '>' + y + '</option>'; }).join('');
+    var usd0 = function (v) { return '$' + Math.round(v || 0).toLocaleString('en-US'); };
+    var k = function (label, v, note) { return '<div class="kpi"><span class="label">' + esc(label) + '</span><span class="value">' + esc(v) + '</span>' + (note ? '<span class="small muted">' + esc(note) + '</span>' : '') + '</div>'; };
+    var max = Math.max.apply(null, r.months.map(function (m) { return m.total; }).concat([1]));
+    var monthsAll = []; for (var i = 1; i <= 12; i++) monthsAll.push(r.year + '-' + String(i).padStart(2, '0'));
+    var bars = monthsAll.map(function (key) {
+      var m = r.months.filter(function (x) { return x.key === key; })[0] || { b2c: 0, lease: 0, purchase: 0, total: 0 };
+      var h = function (v) { return Math.round(v / max * 150); };
+      return '<div class="ybar" title="' + esc(periodName(key)) + ': ' + usd(m.total) + '"><div class="stackbar"><i style="height:' + h(m.purchase) + 'px;background:#E08A1E"></i><i style="height:' + h(m.lease) + 'px;background:#5FA02E"></i><i style="height:' + h(m.b2c) + 'px;background:#1F6FB5"></i></div><span>' + esc(fmtDate(key + '-15T12:00:00', { month: 'short' })) + '</span></div>';
+    }).join('');
+    var table = function (rows, label, limit) {
+      return '<section class="tablecard"><div class="scroll"><table><thead><tr><th>' + label + '</th>' + (label === 'Product' ? '<th style="text-align:right">Qty</th>' : '') + '<th style="text-align:right">Web (B2C)</th><th style="text-align:right">Lease payments</th><th style="text-align:right">Product sales (B2B)</th><th style="text-align:right">Total</th></tr></thead><tbody>' +
+        (rows.length ? rows.slice(0, limit).map(function (x) { return '<tr><td>' + (label === 'School' ? '<a class="plain" href="' + schoolHref(x.key) + '">' + esc(x.key) + '</a>' : esc(x.key)) + '</td>' + (label === 'Product' ? '<td style="text-align:right">' + fmtNum(x.qty) + '</td>' : '') +
+          '<td style="text-align:right">' + usd(x.b2c) + '</td><td style="text-align:right">' + usd(x.lease) + '</td><td style="text-align:right">' + usd(x.purchase) + '</td><td style="text-align:right"><b>' + usd(x.total) + '</b></td></tr>'; }).join('') : '<tr><td colspan="6"><div class="empty">No sales for this year yet.</div></td></tr>') +
+        '</tbody></table></div>' + (rows.length > limit ? '<div class="tfoot"><span>Showing the top ' + limit + ' of ' + rows.length + '. The CSV has all of them.</span></div>' : '') + '</section>';
+    };
+    return '<div class="row" style="justify-content:space-between"><div class="field" style="width:160px"><label for="ye-year" class="sr-only">Year</label><select id="ye-year">' + years + '</select></div>' +
+      '<div class="row" style="gap:8px"><span class="small muted">' + (r.syncedAt ? 'Web orders synced ' + esc(relTime(r.syncedAt)) : 'Web orders not synced yet') + '</span>' +
+      '<button type="button" class="btn sm" data-action="export-ye">' + icon('file', 14, 2) + 'Export CSV</button></div></div>' +
+      '<section class="kpis">' + k('Total revenue', usd0(total), r.year) + k('Web rentals and sales', usd0(t.b2c), 'WooCommerce, before tax') + k('Lease payments', usd0(t.lease), 'Invoices sent or paid') + k('Product sales (B2B)', usd0(t.purchase), 'Invoices sent or paid') + k('Sales tax collected', usd0(t.tax), 'Refunds ' + usd(t.refunds)) + '</section>' +
+      '<section class="card"><div class="card-head"><h2>By month</h2><div class="maplegend" style="position:static;box-shadow:none;border:0;padding:0"><span><i style="background:#1F6FB5"></i>Web</span><span><i style="background:#5FA02E"></i>Lease</span><span><i style="background:#E08A1E"></i>B2B sales</span></div></div><div class="ybars">' + bars + '</div></section>' +
+      '<div class="card-head"><h2>By product</h2></div>' + table(r.products, 'Product', 50) +
+      '<div class="card-head"><h2>By school</h2></div>' + table(r.schools, 'School', 25);
+  }
+
+  function exportYearEndCsv() {
+    var r = state.ye;
+    var rows = [['Year', 'Group', 'Name', 'Qty', 'Web (B2C)', 'Lease payments', 'Product sales (B2B)', 'Total', 'Sales tax']];
+    r.products.forEach(function (x) { rows.push([r.year, 'Product', x.key, x.qty, x.b2c, x.lease, x.purchase, x.total, x.tax]); });
+    r.schools.forEach(function (x) { rows.push([r.year, 'School', x.key, '', x.b2c, x.lease, x.purchase, x.total, x.tax]); });
+    r.months.forEach(function (x) { rows.push([r.year, 'Month', x.key, '', x.b2c, x.lease, x.purchase, x.total, x.tax]); });
+    downloadCsv('pangia-year-end-' + r.year + '.csv', rows);
+  }
+
+  /* ---------------------------------------------------------------- */
   /* Command palette (Ctrl+K)                                         */
   /* ---------------------------------------------------------------- */
 
@@ -2183,6 +2350,8 @@
       items.push({ group: 'Go to', tag: icon('dollar', 16), label: 'Invoices and tax', sub: 'Finance', href: '#/finance', raw: true });
       items.push({ group: 'Go to', tag: icon('dollar', 16), label: 'Lease billing', sub: 'Finance', href: '#/finance?tab=leases', raw: true });
       items.push({ group: 'Go to', tag: icon('dollar', 16), label: 'Tax exemptions', sub: 'Finance', href: '#/finance?tab=exemptions', raw: true });
+      items.push({ group: 'Go to', tag: icon('dollar', 16), label: 'Sales tax by state', sub: 'Finance', href: '#/finance?tab=tax', raw: true });
+      items.push({ group: 'Go to', tag: icon('dollar', 16), label: 'Year-end summary', sub: 'Finance', href: '#/finance?tab=yearend', raw: true });
       items.push({ group: 'Actions', tag: icon('plus', 16), label: 'New invoice', sub: 'Finance', action: 'new-invoice', raw: true });
     }
     if (can('directory')) items.push({ group: 'Go to', tag: icon('school', 16), label: 'Schools', sub: 'The full directory', href: '#/schools', raw: true });
@@ -2321,6 +2490,24 @@
       }).catch(function (err) { el.disabled = false; el.textContent = 'Prepare'; if (err.code !== 'auth_expired') toast(err.message, true); });
     }
     if (name === 'edit-terms' && el) return openTermsModal(el.getAttribute('data-key'));
+    if (name === 'sync-sales' && el) {
+      el.disabled = true; el.textContent = 'Syncing...';
+      toast('Reading WooCommerce orders. The first sync can take a few runs.');
+      return api('syncSales', {}).then(function (r) { toast(r.message); state.ye = null; return loadTax(); }).then(paintFinance)
+        .catch(function (err) { el.disabled = false; el.textContent = 'Sync WooCommerce'; if (err.code !== 'auth_expired') toast(err.message, true); });
+    }
+    if (name === 'export-tax') return exportTaxCsv();
+    if (name === 'export-ye') return exportYearEndCsv();
+    if (name === 'file-period' && el) return openFilingModal(el.getAttribute('data-state'), el.getAttribute('data-period'));
+    if (name === 'unfile') {
+      var uf = $('#filing-form');
+      return api('logFiling', { state: uf.getAttribute('data-state'), period: uf.getAttribute('data-period'), undo: true, kind: state.taxKind }).then(function (t) { state.tax = t; closeModal(); paintFinance(); toast('Filing removed'); })
+        .catch(function (err) { if (err.code !== 'auth_expired') toast(err.message, true); });
+    }
+    if (name === 'tax-states') return openTaxStatesModal();
+    if (name === 'add-taxstate') { var ns = $('#ts-new').value; if (!ns) return toast('Pick a state.', true); return taxStateCall({ state: ns, frequency: $('#ts-freq').value, dueDay: $('#ts-day').value }); }
+    if (name === 'save-taxstate' && el) { var rw = el.closest('.taxstate'); return taxStateCall({ state: rw.getAttribute('data-st'), frequency: rw.querySelector('[name="frequency"]').value, dueDay: rw.querySelector('[name="dueDay"]').value }); }
+    if (name === 'remove-taxstate' && el) return taxStateCall({ state: el.closest('.taxstate').getAttribute('data-st'), remove: true });
     if (name === 'edit-exemption' && el) return openExemptionModal(el.getAttribute('data-school'));
     if (name === 'edit-asset' && el) {
       var aid = el.getAttribute('data-id');
@@ -2383,6 +2570,8 @@
       e.preventDefault();
       return doAction(act.getAttribute('data-action'), act);
     }
+    var tk = e.target.closest('[data-taxkind]');
+    if (tk) { state.taxKind = tk.getAttribute('data-taxkind'); state.taxPeriod = ''; state.tax = null; return paintFinance(); }
     var ft = e.target.closest('[data-fintab]');
     if (ft) { state.finTab = ft.getAttribute('data-fintab'); return paintFinance(); }
     var ivf = e.target.closest('[data-invfilter]');
@@ -2451,6 +2640,8 @@
 
   document.addEventListener('change', function (e) {
     if (e.target.closest && e.target.closest('#invoice-form')) updateInvoiceTotals();
+    if (e.target.id === 'tax-period') { state.taxPeriod = e.target.value; return paintFinance(); }
+    if (e.target.id === 'ye-year') { state.yeYear = e.target.value; state.ye = null; return paintFinance(); }
     if (e.target.id === 'i-school' && !$('#invoice-form').getAttribute('data-id')) {
       var cu = ((state.fin || {}).customers || []).filter(function (c) { return norm(c.school) === norm(e.target.value); })[0];
       if (cu) { if (cu.qbName) $('#i-customer').value = cu.qbName; if (cu.terms) $('#i-terms').value = cu.terms; }
@@ -2483,6 +2674,15 @@
       tb.disabled = true; tb.textContent = 'Saving...';
       return api('saveCustomer', cust).then(function () { tb.disabled = false; return finSave('saveBillingTerms', tp, tb, 'Save billing', 'Lease billing saved'); })
         .catch(function (err) { tb.disabled = false; tb.textContent = 'Save billing'; if (err.code !== 'auth_expired') toast(err.message, true); });
+    }
+    if (form.id === 'filing-form') {
+      e.preventDefault();
+      var fe2 = form.elements;
+      var fb = form.querySelector('[type="submit"]');
+      fb.disabled = true; fb.textContent = 'Saving...';
+      return api('logFiling', { state: form.getAttribute('data-state'), period: form.getAttribute('data-period'), filedOn: fe2.filedOn.value, amount: fe2.amount.value, confirmation: fe2.confirmation.value.trim(), notes: fe2.notes.value.trim(), kind: state.taxKind })
+        .then(function (t) { state.tax = t; closeModal(); paintFinance(); toast('Filing logged'); })
+        .catch(function (err) { fb.disabled = false; fb.textContent = 'Mark as filed'; if (err.code !== 'auth_expired') toast(err.message, true); });
     }
     if (form.id === 'exemption-form') {
       e.preventDefault();
