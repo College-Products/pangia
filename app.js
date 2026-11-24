@@ -2193,7 +2193,7 @@
     rows.forEach(function (s) { Object.keys(tot).forEach(function (k) { tot[k] += s[k] || 0; }); });
     var cell = function (v) { return '<td style="text-align:right;white-space:nowrap">' + usd(v) + '</td>'; };
     var tr = function (s, isTotal) {
-      var nm = isTotal ? 'All states' : s.state === '??' ? 'No state on order' : (names[s.state] || s.state);
+      var nm = isTotal ? 'All states' : s.state === '??' ? 'School not matched' : (names[s.state] || s.state);
       return '<tr' + (isTotal ? ' class="totrow"' : '') + '><td>' + (isTotal ? '<b>' + nm + '</b>' : esc(nm) + (registered[s.state] ? ' <span class="badge sm b-info">Registered</span>' : '')) + '</td>' +
         '<td style="text-align:right">' + fmtNum(s.orders) + '</td>' + cell(s.gross) + cell(s.taxable) + cell(s.exempt) + cell(s.tax) + cell(s.refunds) + cell(s.refundTax) +
         '<td style="text-align:right;white-space:nowrap"><b>' + usd((s.tax || 0) - (s.refundTax || 0) + (s.b2bTax || 0)) + '</b></td>' + cell(s.b2bTaxable) + cell(s.b2bExempt) + '</tr>';
@@ -2206,7 +2206,7 @@
       '<section class="card" style="gap:12px"><div class="card-head"><h2>Filing calendar</h2><button type="button" class="btn sm" data-action="tax-states">' + icon('pencil', 14, 2) + 'Manage states</button></div><div class="filings">' + cal + '</div></section>' +
       '<section class="tablecard" aria-label="Sales tax by state"><div class="scroll"><table class="taxtable"><thead><tr><th>State</th><th style="text-align:right">Web orders</th><th style="text-align:right">Gross sales</th><th style="text-align:right">Taxable</th><th style="text-align:right">Non-taxable</th><th style="text-align:right">Tax collected</th><th style="text-align:right">Refunds</th><th style="text-align:right">Tax refunded</th><th style="text-align:right">Net tax due</th><th style="text-align:right">B2B taxable</th><th style="text-align:right">B2B exempt</th></tr></thead><tbody>' +
       (rows.length ? rows.map(function (s) { return tr(s, false); }).join('') + tr(tot, true) : '<tr><td colspan="11"><div class="empty">' + (t.ordersOnFile ? 'No sales in this period.' : 'No sales yet. Click Sync WooCommerce to pull orders in.') + '</div></td></tr>') + '</tbody></table></div>' +
-      '<div class="tfoot"><span>Web orders from WooCommerce by shipping state, plus B2B invoices from Pangia by school state. Net tax due includes B2B tax. Check the totals against your tax software before filing.</span></div></section>';
+      '<div class="tfoot"><span>Web orders are placed in the state of the school on the order (from the School Tax tab), plus B2B invoices by school state. Tax is the Tax fee charged on each order. Processing fees count as non-taxable. Net tax due includes B2B tax. Check the totals before filing.</span></div></section>';
   }
 
   function exportTaxCsv() {
