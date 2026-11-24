@@ -469,6 +469,7 @@
       navLink('#/logs/cm', 'cm', 'CM Logs', route.type === 'cm', u.role === 'Campus Manager' && d.schools.reduce(function (a, s) { return a + (s.openTasks || 0); }, 0) ? '<span class="count">' + d.schools.reduce(function (a, s) { return a + (s.openTasks || 0); }, 0) + '</span>' : '') +
       navLink('#/logs/delivery', 'delivery', 'Delivery Logs', route.type === 'delivery') +
       navLink('#/logs/collection', 'collection', 'Collection Logs', route.type === 'collection');
+    var appNav = (d.apps || []).length ? '<span class="nav-label">Apps</span>' + d.apps.map(function (a) { return extLink(a.url, a.icon || 'ext', a.name); }).join('') : '';
     if (u.role === 'Manager' || isTeam()) {
       var renewCount = d.schools.filter(function (s) { return s.contract && s.contract.status === 'Renewing soon'; }).length;
       var reviewCount = can('contacts.review') ? (d.contacts || []).filter(function (ct) { return ct.review && ct.status === 'Active'; }).length : 0;
@@ -481,13 +482,13 @@
         (can('assets') ? navLink('#/assets', 'library', 'Asset Library', r === 'assets') : '') +
         invLink +
         (can('finance') ? '<span class="nav-label">Finance</span>' + navLink('#/finance', 'dollar', 'Invoices and tax', r === 'finance') : '') +
-        (can('logs') ? logNav : '');
+        (can('logs') ? logNav : '') + appNav;
     } else if (u.role === 'Campus Manager') {
       nav = navLink('#/', 'school', 'My schools', r === 'home' || r === 'school') +
         (can('contacts') ? navLink('#/contacts', 'users', 'Contacts', r === 'contacts') : '') +
         (can('map') ? navLink('#/map', 'map', 'Map', r === 'map') : '') +
         (can('assets') ? navLink('#/assets', 'library', 'Asset Library', r === 'assets') : '') +
-        logNav;
+        logNav + appNav;
     } else {
       var s0 = d.schools[0] || {};
       nav = navLink('#/', 'pencil', 'My school', r === 'home') +
