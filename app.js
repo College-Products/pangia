@@ -16,6 +16,7 @@
     modal: false,
     map: null,
     mapObj: null,
+    assets: null,
     palette: { open: false, query: '', index: 0, items: [] }
   };
 
@@ -108,7 +109,8 @@
     map: 'M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14',
     box: 'M21 8l-9-5-9 5v8l9 5 9-5V8zM3 8l9 5 9-5M12 13v8',
     key: 'M15 7a4 4 0 1 1-3.5 6L4 20.5 3.5 18 5 16.5 6.5 18 8 16.5 6.5 15l4.9-4.9A4 4 0 0 1 15 7zM16 8h.01',
-    dir: 'M12 2l8 8-8 8-8-8 8-8zM9 11h4V9l3 3-3 3v-2H10v2'
+    dir: 'M12 2l8 8-8 8-8-8 8-8zM9 11h4V9l3 3-3 3v-2H10v2',
+    library: 'M4 4h4v16H4zM10 4h4v16h-4zM16.5 4.6l3.8-1 3.7 15.5-3.8.9z'
   };
   function icon(name, size, stroke) {
     return '<svg class="i" width="' + (size || 18) + '" height="' + (size || 18) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + (stroke || 1.8) + '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + PATHS[name] + '"></path></svg>';
@@ -460,12 +462,14 @@
         (can('contacts') ? navLink('#/contacts', 'users', 'Contacts', r === 'contacts', reviewCount ? '<span class="count">' + reviewCount + '</span>' : '') : '') +
         (can('contract.docs') ? navLink('#/contracts', 'file', 'Contracts', r === 'contracts', renewCount ? '<span class="count">' + renewCount + '</span>' : '') : '') +
         (can('map') ? navLink('#/map', 'map', 'Map', r === 'map') : '') +
+        (can('assets') ? navLink('#/assets', 'library', 'Asset Library', r === 'assets') : '') +
         invLink +
         (can('logs') ? logNav : '');
     } else if (u.role === 'Campus Manager') {
       nav = navLink('#/', 'school', 'My schools', r === 'home' || r === 'school') +
         (can('contacts') ? navLink('#/contacts', 'users', 'Contacts', r === 'contacts') : '') +
         (can('map') ? navLink('#/map', 'map', 'Map', r === 'map') : '') +
+        (can('assets') ? navLink('#/assets', 'library', 'Asset Library', r === 'assets') : '') +
         logNav;
     } else {
       var s0 = d.schools[0] || {};
@@ -519,6 +523,7 @@
     if (parts[0] === 'contracts' && can('contract.docs')) return { name: 'contracts', query: query };
     if (parts[0] === 'contacts' && can('contacts')) return { name: 'contacts', query: query };
     if (parts[0] === 'map' && can('map')) return { name: 'map', query: query };
+    if (parts[0] === 'assets' && can('assets')) return { name: 'assets', query: query };
     return { name: 'home', query: query };
   }
 
@@ -540,6 +545,7 @@
     }
     else if (route.name === 'logs' && can('logs')) html = viewLogs(route.type);
     else if (route.name === 'map') html = viewMap(route.query);
+    else if (route.name === 'assets') html = viewAssets(route.query);
     else if (r === 'Manager') html = viewManagerHome();
     else if (isTeam()) html = viewTeamHome();
     else if (r === 'Campus Manager') html = viewCampusHome();
@@ -810,7 +816,7 @@
       '<section class="card span-all" style="gap:6px"><div class="card-head" style="margin-bottom:8px"><h2>Change history</h2><span class="hint">Every save is kept</span></div><div id="history">' + historyList(res.history) + '</div></section>' : '';
 
     var contractsCard = docs ? contractRecords(s.name, res, mgr) : '';
-    body.innerHTML = '<div class="grid">' + (s.health ? health : '') + contract + stock + contactsCard(s.name, res.contacts || [], res.contactHistory) + storageCard(s.name, res.storage, res.storageHistory) + contractsCard + (can('logs') || role() === 'Campus Manager' ? logs : '') + profileCard(res.profile) + people + activity + reg + editor + '</div>';
+    body.innerHTML = '<div class="grid">' + (s.health ? health : '') + contract + stock + contactsCard(s.name, res.contacts || [], res.contactHistory) + storageCard(s.name, res.storage, res.storageHistory) + contractsCard + (can('logs') || role() === 'Campus Manager' ? logs : '') + profileCard(res.profile) + schoolAssetsCard(res.profile) + people + activity + reg + editor + '</div>';
   }
 
   function contractRecords(schoolName, res, editable) {
@@ -1328,7 +1334,8 @@
       ['#/schools', 'school', 'Schools', schools.length + ' schools'],
       can('contacts') ? ['#/contacts', 'users', 'Contacts', contacts.length + ' people'] : null,
       can('contract.docs') ? ['#/contracts', 'file', 'Contracts', renewals.length + ' renewing soon'] : null,
-      can('logs') ? ['#/logs/cm', 'cm', 'CM Logs', 'Per school'] : null
+      can('logs') ? ['#/logs/cm', 'cm', 'CM Logs', 'Per school'] : null,
+      can('assets') ? ['#/assets', 'library', 'Asset Library', (d.assets || []).length + ' files'] : null
     ].filter(Boolean);
     return '<header class="pagehead"><div class="titles"><span class="eyebrow">' + esc(today()) + ' · ' + esc(r) + '</span><h1 class="h1">' + greeting() + ', ' + esc(firstName(d.user.name)) + '</h1><p class="sub">' + esc(TEAM_INFO[r] || '') + '</p></div></header>' +
       '<section class="kpis" aria-label="Summary">' + kpis + '</section>' +
@@ -1656,6 +1663,148 @@
   }
 
   /* ---------------------------------------------------------------- */
+  /* Asset Library                                                    */
+  /* ---------------------------------------------------------------- */
+
+  var FORMAT_COLORS = { PDF: '#C2410C', DOCX: '#1D5FBF', DOC: '#1D5FBF', XLSX: '#1E7B45', XLS: '#1E7B45', PPTX: '#C04A1A', GDOC: '#1D5FBF', GSHEET: '#1E7B45', GSLIDES: '#B7791F', CANVA: '#7C3AED', PNG: '#0E7490', JPG: '#0E7490', SVG: '#0E7490', FOLDER: '#5B6B7C', LINK: '#5B6B7C' };
+  var CATEGORY_ICON = { 'Spec sheet': 'file', 'SOP': 'cm', 'Poster': 'layers', 'Rack card': 'layers', 'Email': 'mail', 'Social': 'users', 'Logo': 'spark', 'Presentation': 'layers', 'Template': 'pencil', 'Training': 'school', 'Other': 'file' };
+
+  function assetList() { return (state.data.assets || []); }
+
+  function filteredAssets() {
+    var a = state.assets;
+    var q = a.q.trim().toLowerCase();
+    return assetList().filter(function (x) {
+      if (a.audience !== 'all' && x.audience !== a.audience) return false;
+      if (a.category !== 'all' && x.category !== a.category) return false;
+      if (a.archived !== (x.status === 'Archived')) return false;
+      if (q && [x.title, x.description, x.product, x.category, x.tags, x.audience, x.format].join(' ').toLowerCase().indexOf(q) === -1) return false;
+      return true;
+    });
+  }
+
+  function assetCard(x) {
+    var u = safeUrl(x.url);
+    var color = FORMAT_COLORS[x.format] || '#5B6B7C';
+    var restricted = x.access && x.access.length;
+    return '<article class="asset' + (x.status === 'Archived' ? ' inactive' : '') + '">' +
+      '<a class="asset-top" href="' + esc(u) + '" target="_blank" rel="noopener" style="--fmt:' + color + '" aria-label="Open ' + esc(x.title) + '">' +
+      '<span class="asset-ic">' + icon(CATEGORY_ICON[x.category] || 'file', 22, 1.8) + '</span><span class="asset-fmt">' + esc(x.format || 'LINK') + '</span></a>' +
+      '<div class="asset-body"><div class="row" style="gap:6px"><span class="badge sm b-info">' + esc(x.category) + '</span><span class="badge sm ' + (x.audience === 'Internal' ? 'b-mute' : 'b-good') + '">' + esc(x.audience) + '</span>' +
+      (restricted ? '<span class="badge sm b-warn" title="Only these teams can see it">' + icon('lock', 11, 2.2) + esc(x.access.join(', ')) + '</span>' : '') +
+      (x.status === 'Archived' ? '<span class="badge sm b-mute">Archived</span>' : '') + '</div>' +
+      '<b class="asset-title">' + esc(x.title) + '</b>' +
+      (x.description ? '<p class="asset-desc">' + esc(x.description) + '</p>' : '') +
+      '<div class="asset-foot"><span class="small muted">' + esc(x.source || 'Link') + (x.updatedAt ? ' · ' + esc(relTime(x.updatedAt)) : '') + '</span>' +
+      '<span class="row" style="gap:2px;flex-wrap:nowrap">' + copyBtn(u, 'link') +
+      (can('assets.edit') ? '<button type="button" class="copybtn" data-action="edit-asset" data-id="' + esc(x.id) + '" title="Edit" aria-label="Edit ' + esc(x.title) + '">' + icon('pencil', 15, 2) + '</button>' : '') +
+      '<a class="btn sm primary" href="' + esc(u) + '" target="_blank" rel="noopener">Open' + icon('ext', 14, 2) + '</a></span></div></div></article>';
+  }
+
+  function assetResults() {
+    var list = filteredAssets();
+    if (!list.length) return '<div class="empty">' + (assetList().length ? 'Nothing matches these filters.' : 'The library is empty. Run importAssets() in Apps Script to load the spec sheets and SOPs.') + '</div>';
+    var groups = {};
+    list.forEach(function (x) { (groups[x.category] = groups[x.category] || []).push(x); });
+    var order = ((state.data.assetOptions || {}).categories || []).concat(Object.keys(groups));
+    var seen = {};
+    return order.filter(function (c) { if (seen[c] || !groups[c]) return false; seen[c] = true; return true; }).map(function (c) {
+      return '<section class="asset-group"><div class="card-head"><h2>' + esc(c) + (/s$/.test(c) || c === 'Other' ? '' : 's') + '</h2><span class="hint">' + groups[c].length + ' file' + (groups[c].length === 1 ? '' : 's') + '</span></div>' +
+        '<div class="asset-grid">' + groups[c].map(assetCard).join('') + '</div></section>';
+    }).join('');
+  }
+
+  function viewAssets(query) {
+    if (!state.assets) state.assets = { audience: 'all', category: 'all', q: '', archived: false };
+    var a = state.assets;
+    if (query.q != null) a.q = query.q;
+    if (query.category) a.category = query.category;
+    var all = assetList().filter(function (x) { return x.status !== 'Archived'; });
+    var count = function (fn) { return all.filter(fn).length; };
+    var audTabs = [['all', 'Everything'], ['B2B', 'B2B · partners'], ['B2C', 'B2C · students'], ['Internal', 'Internal']].map(function (t) {
+      var n = t[0] === 'all' ? all.length : count(function (x) { return x.audience === t[0]; });
+      return '<button type="button" class="seg" data-assetaud="' + t[0] + '" aria-pressed="' + (a.audience === t[0]) + '">' + esc(t[1]) + '<span>' + n + '</span></button>';
+    }).join('');
+    var cats = {};
+    all.forEach(function (x) { cats[x.category] = (cats[x.category] || 0) + 1; });
+    var chips = '<button type="button" class="pill sm" data-assetcat="all" aria-pressed="' + (a.category === 'all') + '">All types</button>' +
+      Object.keys(cats).sort().map(function (k) { return '<button type="button" class="pill sm" data-assetcat="' + esc(k) + '" aria-pressed="' + (a.category === k) + '">' + esc(k) + ' · ' + cats[k] + '</button>'; }).join('') +
+      (can('assets.edit') && assetList().some(function (x) { return x.status === 'Archived'; }) ? '<button type="button" class="pill sm" data-assetarch="1" aria-pressed="' + a.archived + '">Archived</button>' : '');
+    return '<header class="pagehead"><div class="titles"><h1 class="h1">Asset Library</h1><p class="sub">Spec sheets, SOPs and marketing files for every team. Files open straight from SharePoint or Google Drive.</p></div>' +
+      (can('assets.edit') ? '<button type="button" class="btn primary" data-action="add-asset">' + icon('plus', 16, 2) + 'Add a file</button>' : '') + '</header>' +
+      '<div class="segbar" role="group" aria-label="Audience">' + audTabs + '</div>' +
+      '<div class="row" style="justify-content:space-between;align-items:center"><div class="row" style="gap:6px" role="group" aria-label="File type">' + chips + '</div>' +
+      '<div class="field" style="width:280px;max-width:100%"><label for="asset-search" class="sr-only">Search the library</label><input id="asset-search" type="search" placeholder="Search titles, products, tags" value="' + esc(a.q) + '" autocomplete="off"></div></div>' +
+      '<div id="asset-results" class="stack" style="gap:28px">' + assetResults() + '</div>';
+  }
+
+  function repaintAssets() {
+    var box = $('#asset-results');
+    if (box) box.innerHTML = assetResults();
+    document.querySelectorAll('[data-assetaud]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-assetaud') === state.assets.audience)); });
+    document.querySelectorAll('[data-assetcat]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-assetcat') === state.assets.category)); });
+    var ar = $('[data-assetarch]');
+    if (ar) ar.setAttribute('aria-pressed', String(state.assets.archived));
+  }
+
+  // "3.2 USB/SS Combo, Loft Kit" -> ['3.2combo']. Used to match spec sheets to a school's products.
+  function productKeys(text) {
+    var keys = [];
+    String(text || '').split(/,|\bor\b|\//).forEach(function (part) {
+      var size = (part.match(/(\d+\.\d+)/) || [])[1];
+      var type = /combo|combination/i.test(part) ? 'combo' : /fridge|refrigerator/i.test(part) ? 'fridge' : /microwave/i.test(part) ? 'microwave' : '';
+      if (size && type) keys.push(size + type);
+    });
+    return keys;
+  }
+
+  function schoolAssetsCard(profile) {
+    if (!can('assets') || !profile) return '';
+    var want = productKeys(profile.products);
+    if (!want.length) return '';
+    var hits = assetList().filter(function (x) {
+      return x.status !== 'Archived' && x.category === 'Spec sheet' && productKeys(x.product).some(function (k) { return want.indexOf(k) !== -1; });
+    });
+    if (!hits.length) return '';
+    return '<section class="card" aria-labelledby="sa-h"><div class="card-head"><h2 id="sa-h">Spec sheets for this school</h2><a href="#/assets">Asset Library</a></div>' +
+      hits.map(function (x) {
+        var u = safeUrl(x.url);
+        return '<div class="rowlink"><span class="tag" style="background:' + (FORMAT_COLORS[x.format] || '#5B6B7C') + ';color:#fff;font-size:10px">' + esc(x.format) + '</span>' +
+          '<a class="t" href="' + esc(u) + '" target="_blank" rel="noopener" style="text-decoration:none;color:var(--ink)"><b>' + esc(x.title) + '</b><span>Matches ' + esc(x.product) + '</span></a>' + copyBtn(u, 'link') + '</div>';
+      }).join('') + '</section>';
+  }
+
+  function openAssetModal(x) {
+    if (!can('assets.edit')) return;
+    closePalette();
+    var opts = state.data.assetOptions || { categories: ['Other'], audiences: ['Internal'], roles: [] };
+    var v = x || { category: 'Other', audience: 'Internal', access: [], status: 'Active' };
+    var roles = (opts.roles || []).filter(function (r) { return r !== 'Manager'; });
+    var sel = function (name, list, cur) { return '<select id="a-' + name + '" name="' + name + '">' + list.map(function (o) { return '<option' + (o === cur ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select>'; };
+    var inp = function (name, label, val, extra) { return '<div class="field' + (extra && extra.full ? ' full' : '') + '"><label for="a-' + name + '">' + label + (extra && extra.optional ? ' <span class="muted" style="font-weight:400">(optional)</span>' : '') + '</label>' +
+      (extra && extra.area ? '<textarea id="a-' + name + '" name="' + name + '" maxlength="600">' + esc(val || '') + '</textarea>' : '<input id="a-' + name + '" name="' + name + '" value="' + esc(val || '') + '"' + (extra && extra.type ? ' type="' + extra.type + '"' : '') + '>') + '</div>'; };
+    state.modal = true;
+    $('#palette-root').innerHTML = '<div class="overlay" data-action="modal-bg"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="am-h">' +
+      '<div class="card-head"><h2 id="am-h" style="font-family:var(--display);font-size:20px;font-weight:800">' + (x ? 'Edit library file' : 'Add a file to the library') + '</h2>' +
+      '<button type="button" class="copybtn" data-action="close-modal" aria-label="Close">' + icon('x', 18, 2) + '</button></div>' +
+      '<form class="form" id="asset-modal-form" data-id="' + esc(x ? x.id : '') + '" novalidate><div class="fields">' +
+      inp('title', 'Title', v.title, { full: true }) +
+      inp('url', 'Link', v.url, { full: true, type: 'url' }) +
+      '<div class="field"><label for="a-category">Type</label>' + sel('category', opts.categories, v.category) + '</div>' +
+      '<div class="field"><label for="a-audience">Audience</label>' + sel('audience', opts.audiences, v.audience) + '</div>' +
+      inp('product', 'Product', v.product, { optional: true }) + inp('tags', 'Tags', v.tags, { optional: true }) +
+      inp('description', 'Short description', v.description, { full: true, area: true, optional: true }) +
+      '<div class="field full"><span class="legend-title" style="margin-bottom:4px">Who can see it</span><div class="row" style="gap:8px">' +
+      roles.map(function (r) { return '<label class="checkline pillcheck"><input type="checkbox" name="access" value="' + esc(r) + '"' + ((v.access || []).indexOf(r) !== -1 ? ' checked' : '') + '> ' + esc(r) + '</label>'; }).join('') +
+      '</div><span class="small muted">Leave all unchecked so every team can see it. Managers always can.</span></div>' +
+      (x ? '<div class="field"><label for="a-status">Status</label>' + sel('status', ['Active', 'Archived'], v.status) + '</div>' : '') +
+      '</div><div class="formfoot" style="border:0;padding:0"><span class="small muted">Paste a SharePoint, Google Drive or Canva link.</span>' +
+      '<button type="submit" class="btn primary">' + (x ? 'Save file' : icon('plus', 16, 2) + 'Add file') + '</button></div></form></div></div>';
+    var f = $(x ? '#a-title' : '#a-title');
+    if (f) f.focus();
+  }
+
+  /* ---------------------------------------------------------------- */
   /* Command palette (Ctrl+K)                                         */
   /* ---------------------------------------------------------------- */
 
@@ -1688,7 +1837,13 @@
       if (st.status === 'Closed') return;
       items.push({ group: 'Storage', tag: icon('box', 16), raw: true, label: st.company || st.address, sub: [st.type, st.school, st.city].filter(Boolean).join(' · '), href: '#/map?storage=' + encodeURIComponent(st.id), words: 'storage ' + st.unit + ' ' + st.address });
     });
+    (d.assets || []).forEach(function (x) {
+      if (x.status === 'Archived' || !safeUrl(x.url)) return;
+      items.push({ group: 'Files', tag: esc(x.format || 'LINK'), label: x.title, sub: [x.category, x.audience, x.product].filter(Boolean).join(' · '), href: safeUrl(x.url), external: true, words: x.tags + ' ' + x.description, raw: true });
+    });
     if (r !== 'School Admin') items.push({ group: 'Go to', tag: icon('home', 16), label: 'Home', sub: 'Your overview', href: '#/', raw: true });
+    if (can('assets')) items.push({ group: 'Go to', tag: icon('library', 16), label: 'Asset Library', sub: 'Spec sheets, SOPs and marketing files', href: '#/assets', raw: true });
+    if (can('assets.edit')) items.push({ group: 'Actions', tag: icon('plus', 16), label: 'Add a file to the library', sub: 'Asset Library', action: 'add-asset', raw: true });
     if (can('directory')) items.push({ group: 'Go to', tag: icon('school', 16), label: 'Schools', sub: 'The full directory', href: '#/schools', raw: true });
     if (can('contacts')) items.push({ group: 'Go to', tag: icon('users', 16), label: 'Contacts', sub: 'Everyone we work with at each school', href: '#/contacts', raw: true });
     if (can('map')) items.push({ group: 'Go to', tag: icon('map', 16), label: 'Map', sub: 'Schools and storage on a map', href: '#/map', raw: true });
@@ -1725,11 +1880,11 @@
     var q = state.palette.query.trim().toLowerCase();
     var all = paletteItems();
     var hits = all.filter(function (it) {
-      if (!q) return it.group !== 'Logs' && it.group !== 'People' && it.group !== 'Storage';
+      if (!q) return it.group !== 'Logs' && it.group !== 'People' && it.group !== 'Storage' && it.group !== 'Files';
       var hay = (it.label + ' ' + (it.sub || '') + ' ' + (it.words || '')).toLowerCase();
       return q.split(/\s+/).every(function (w) { return hay.indexOf(w) !== -1; });
     });
-    var groups = ['Schools', 'People', 'Storage', 'Go to', 'Logs', 'Actions'];
+    var groups = ['Schools', 'People', 'Files', 'Storage', 'Go to', 'Logs', 'Actions'];
     var flat = [];
     var html = '';
     groups.forEach(function (g) {
@@ -1799,6 +1954,13 @@
       if (stv) openStorageModal(stv);
       return;
     }
+    if (name === 'add-asset') return openAssetModal(null);
+    if (name === 'edit-asset' && el) {
+      var aid = el.getAttribute('data-id');
+      var av = assetList().filter(function (x) { return x.id === aid; })[0];
+      if (av) openAssetModal(av);
+      return;
+    }
     if (name === 'map-back') { state.map.selected = null; var mp = $('#map-panel'); if (mp) mp.innerHTML = mapPanel(); drawMarkers(false); return; }
     if (name === 'copy-link') {
       var text = location.href;
@@ -1854,6 +2016,11 @@
       e.preventDefault();
       return doAction(act.getAttribute('data-action'), act);
     }
+    var aa = e.target.closest('[data-assetaud]');
+    if (aa) { state.assets.audience = aa.getAttribute('data-assetaud'); return repaintAssets(); }
+    var ac = e.target.closest('[data-assetcat]');
+    if (ac) { state.assets.category = ac.getAttribute('data-assetcat'); return repaintAssets(); }
+    if (e.target.closest('[data-assetarch]')) { state.assets.archived = !state.assets.archived; return repaintAssets(); }
     var mpick = e.target.closest('[data-mappick]');
     if (mpick) return selectMapPoint(mpick.getAttribute('data-mappick'), true);
     var mf = e.target.closest('[data-mapf]');
@@ -1886,6 +2053,10 @@
       state.search = e.target.value;
       var rows = $('#school-rows');
       if (rows) rows.innerHTML = schoolRows();
+    } else if (e.target.id === 'asset-search') {
+      state.assets.q = e.target.value;
+      var ab = $('#asset-results');
+      if (ab) ab.innerHTML = assetResults();
     } else if (e.target.id === 'map-search') {
       state.map.q = e.target.value;
       repaintMapPanel();
@@ -1912,6 +2083,27 @@
 
   document.addEventListener('submit', function (e) {
     var form = e.target;
+    if (form.id === 'asset-modal-form') {
+      e.preventDefault();
+      var fe = form.elements;
+      var ap = { id: form.getAttribute('data-id'), title: fe.title.value.trim(), url: fe.url.value.trim(), category: fe.category.value, audience: fe.audience.value,
+        product: fe.product.value.trim(), tags: fe.tags.value.trim(), description: fe.description.value.trim(), status: fe.status ? fe.status.value : 'Active',
+        access: Array.prototype.slice.call(form.querySelectorAll('input[name="access"]:checked')).map(function (i) { return i.value; }) };
+      if (!ap.title) { toast('Give the file a title.', true); return; }
+      if (!/^https:\/\//i.test(ap.url)) { toast('The link must start with https://', true); return; }
+      var abtn = form.querySelector('[type="submit"]');
+      abtn.disabled = true; abtn.textContent = 'Saving...';
+      api('saveAsset', ap).then(function (res) {
+        state.data.assets = res.assets;
+        closeModal();
+        toast(ap.id ? 'File saved' : 'File added to the library');
+        renderRoute();
+      }).catch(function (err) {
+        abtn.disabled = false; abtn.textContent = ap.id ? 'Save file' : 'Add file';
+        if (err.code !== 'auth_expired') toast(err.message, true);
+      });
+      return;
+    }
     if (form.id === 'storage-modal-form') {
       e.preventDefault();
       var se = form.elements;
