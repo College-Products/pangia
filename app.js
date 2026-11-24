@@ -21,6 +21,12 @@
     finTab: null,
     finStatus: 'Open',
     exFilter: 'all',
+    inv: null,
+    invTab: 'stock',
+    invKind: 'all',
+    invQ: '',
+    invType: 'All',
+    invLogQ: '',
     tax: null,
     taxKind: 'quarter',
     taxPeriod: '',
@@ -458,7 +464,7 @@
     var u = d.user;
     var r = route.name;
     var nav = '';
-    var invLink = d.inventoryDashboardUrl ? '<a href="' + esc(safeUrl(d.inventoryDashboardUrl)) + '" target="_blank" rel="noopener">' + icon('layers') + '<span class="grow">Inventory</span>' + icon('ext', 14) + '</a>' : '';
+    var invLink = can('inventory') ? navLink('#/inventory', 'layers', 'Inventory', r === 'inventory') : '';
     var logNav = '<span class="nav-label">Logs</span>' +
       navLink('#/logs/cm', 'cm', 'CM Logs', route.type === 'cm', u.role === 'Campus Manager' && d.schools.reduce(function (a, s) { return a + (s.openTasks || 0); }, 0) ? '<span class="count">' + d.schools.reduce(function (a, s) { return a + (s.openTasks || 0); }, 0) + '</span>' : '') +
       navLink('#/logs/delivery', 'delivery', 'Delivery Logs', route.type === 'delivery') +
@@ -536,6 +542,7 @@
     if (parts[0] === 'map' && can('map')) return { name: 'map', query: query };
     if (parts[0] === 'assets' && can('assets')) return { name: 'assets', query: query };
     if (parts[0] === 'finance' && can('finance')) return { name: 'finance', query: query };
+    if (parts[0] === 'inventory' && can('inventory')) return { name: 'inventory', query: query };
     return { name: 'home', query: query };
   }
 
@@ -559,6 +566,7 @@
     else if (route.name === 'map') html = viewMap(route.query);
     else if (route.name === 'assets') html = viewAssets(route.query);
     else if (route.name === 'finance') html = viewFinance(route.query);
+    else if (route.name === 'inventory') html = viewInventory(route.query);
     else if (r === 'Manager') html = viewManagerHome();
     else if (isTeam()) html = viewTeamHome();
     else if (r === 'Campus Manager') html = viewCampusHome();
@@ -568,6 +576,7 @@
     window.scrollTo(0, 0);
     if (route.name === 'school' && r !== 'School Admin') loadSchool(route.school);
     if (route.name === 'map') initMap(route.query);
+    if (route.name === 'inventory') loadInventory(true).then(paintInventory).catch(function (err) { if (err.code !== 'auth_expired') { var b = $('#inv-body'); if (b) b.innerHTML = '<div class="empty">' + esc(err.message) + '</div>'; } });
     if (route.name === 'finance') loadFinance(true).then(paintFinance).catch(function (err) { if (err.code !== 'auth_expired') { var b = $('#fin-body'); if (b) b.innerHTML = '<div class="empty">' + esc(err.message) + '</div>'; } });
   }
 
@@ -830,7 +839,7 @@
       '<section class="card span-all" style="gap:6px"><div class="card-head" style="margin-bottom:8px"><h2>Change history</h2><span class="hint">Every save is kept</span></div><div id="history">' + historyList(res.history) + '</div></section>' : '';
 
     var contractsCard = docs ? contractRecords(s.name, res, mgr) : '';
-    body.innerHTML = '<div class="grid">' + (s.health ? health : '') + contract + stock + contactsCard(s.name, res.contacts || [], res.contactHistory) + storageCard(s.name, res.storage, res.storageHistory) + contractsCard + (can('logs') || role() === 'Campus Manager' ? logs : '') + profileCard(res.profile) + schoolAssetsCard(res.profile) + billingCard(res.billing, s.name) + people + activity + reg + editor + '</div>';
+    body.innerHTML = '<div class="grid">' + (s.health ? health : '') + contract + stock + contactsCard(s.name, res.contacts || [], res.contactHistory) + storageCard(s.name, res.storage, res.storageHistory) + contractsCard + (can('logs') || role() === 'Campus Manager' ? logs : '') + profileCard(res.profile) + schoolAssetsCard(res.profile) + billingCard(res.billing, s.name) + (can('inventory') ? inventoryCard(res.inventory, s.name) : '') + people + activity + reg + editor + '</div>';
   }
 
   function contractRecords(schoolName, res, editable) {
@@ -1585,6 +1594,7 @@
       block('Campus', (addr ? '<div class="reachline">' + icon('pin', 14, 2) + '<span>' + esc(addr) + '</span>' + copyBtn(addr, 'address') + '</div>' : '') +
         '<a class="plink" href="' + esc(directionsUrl(l.lat, l.lng, addr)) + '" target="_blank" rel="noopener">' + icon('dir', 15, 2) + '<span>Directions</span>' + icon('ext', 13, 2) + '</a>') +
       block('Stock', stock) +
+      block('Inventory', invSummaryLine('school:' + schoolKey(p.name)) + invSummaryLine('sold:' + schoolKey(p.name))) +
       block('Contact', primary ? '<div style="display:flex;flex-direction:column;gap:2px"><b style="font-size:14px">' + esc(primary.name) + '</b>' + (primary.title ? '<span class="small muted">' + esc(primary.title) + '</span>' : '') + reachLine('mail', primary.email) + reachLine('phone', primary.phone) + '</div>' + (contacts.length > 1 ? '<span class="small muted">+' + (contacts.length - 1) + ' more on the school page</span>' : '') : '') +
       block('Storage nearby', near.map(function (x) {
         return '<button type="button" class="maprow" data-mappick="' + esc(x.p.id) + '"><span class="pinmark sq"></span><span class="t"><b>' + esc(x.p.name) + '</b><span>' + esc(x.p.storage.type || 'Storage') + ' · ' + (x.mi < 0.2 ? 'on campus' : x.mi.toFixed(1) + ' mi away') + (x.own ? '' : ' · ' + esc(x.p.storage.school)) + '</span></span>' + icon('chev', 16) + '</button>';
@@ -1597,6 +1607,7 @@
     var campus = all.filter(function (x) { return x.kind === 'school' && norm(x.name) === norm(st.school); })[0];
     return '<button type="button" class="btn sm" data-action="map-back" style="align-self:flex-start">' + icon('chev', 14, 2).replace('<svg', '<svg style="transform:rotate(180deg)"') + 'All locations</button>' +
       storageItem(st, can('storage.edit'), true) +
+      (invSummaryLine('wh:' + st.id) ? '<div class="pblock"><span class="legend-title">Inventory here</span>' + invSummaryLine('wh:' + st.id) + '<a class="plink" href="#/inventory?tab=stock&loc=' + encodeURIComponent(st.company || '') + '">' + icon('layers', 15, 2) + '<span>Open in Inventory</span></a></div>' : '') +
       (campus ? '<button type="button" class="maprow" data-mappick="' + esc(campus.id) + '"><span class="pinmark" style="background:' + PROGRAM_COLORS[campus.program] + '"></span><span class="t"><b>' + esc(campus.name) + '</b><span>Campus · ' + (miles(p, campus) < 0.2 ? 'on campus' : miles(p, campus).toFixed(1) + ' mi away') + '</span></span>' + icon('chev', 16) + '</button>' : '');
   }
 
@@ -2010,7 +2021,7 @@
       '<form class="form" id="invoice-form" data-id="' + esc(inv ? inv.id : '') + '" novalidate><div class="fields three">' +
       '<div class="field"><label for="i-school">School</label><input id="i-school" name="school" list="i-schools" value="' + esc(v.school) + '" autocomplete="off"><datalist id="i-schools">' + allCustomerNames().map(function (n) { return '<option value="' + esc(n) + '"></option>'; }).join('') + '</datalist></div>' +
       '<div class="field"><label for="i-customer">QuickBooks customer <span class="muted" style="font-weight:400">(if different)</span></label><input id="i-customer" name="customer" value="' + esc(v.customer && v.customer !== v.school ? v.customer : '') + '"></div>' +
-      '<div class="field"><label for="i-type">Type</label>' + sel('type', ['Product sale', 'Lease payment'], v.type) + '</div>' +
+      '<div class="field"><label for="i-type">Type</label>' + sel('type', ['Product sale', 'Lease payment', 'Service'], v.type) + '</div>' +
       '<div class="field"><label for="i-po">PO number</label><input id="i-po" name="po" value="' + esc(v.po || '') + '"></div>' +
       '<div class="field"><label for="i-date">Invoice date</label><input id="i-date" name="date" type="date" value="' + esc(v.date) + '"></div>' +
       '<div class="field"><label for="i-terms">Terms</label>' + sel('terms', o.terms || ['Net 30'], v.terms) + '</div>' +
@@ -2194,7 +2205,7 @@
     var cell = function (v) { return '<td style="text-align:right;white-space:nowrap">' + usd(v) + '</td>'; };
     var tr = function (s, isTotal) {
       var nm = isTotal ? 'All states' : s.state === '??' ? 'School not matched' : (names[s.state] || s.state);
-      return '<tr' + (isTotal ? ' class="totrow"' : '') + '><td>' + (isTotal ? '<b>' + nm + '</b>' : esc(nm) + (registered[s.state] ? ' <span class="badge sm b-info">Registered</span>' : '')) + '</td>' +
+      return '<tr' + (isTotal ? ' class="totrow"' : '') + '><td>' + (isTotal ? '<b>' + nm + '</b>' : esc(nm) + (registered[s.state] ? ' <span class="badge sm b-info">Registered</span>' : '') + (s.noTax ? ' <span class="badge sm b-warn" title="' + fmtNum(s.noTax) + ' orders, ' + usd(s.noTaxGross) + ' in sales, at a taxed school but with no tax on file. Most were imported from the old website.">' + fmtNum(s.noTax) + ' without tax on file</span>' : '')) + '</td>' +
         '<td style="text-align:right">' + fmtNum(s.orders) + '</td>' + cell(s.gross) + cell(s.taxable) + cell(s.exempt) + cell(s.tax) + cell(s.refunds) + cell(s.refundTax) +
         '<td style="text-align:right;white-space:nowrap"><b>' + usd((s.tax || 0) - (s.refundTax || 0) + (s.b2bTax || 0)) + '</b></td>' + cell(s.b2bTaxable) + cell(s.b2bExempt) + '</tr>';
     };
@@ -2283,7 +2294,7 @@
       return '<div class="ybar" title="' + esc(periodName(key)) + ': ' + usd(m.total) + '"><div class="stackbar"><i style="height:' + h(m.purchase) + 'px;background:#E08A1E"></i><i style="height:' + h(m.lease) + 'px;background:#5FA02E"></i><i style="height:' + h(m.b2c) + 'px;background:#1F6FB5"></i></div><span>' + esc(fmtDate(key + '-15T12:00:00', { month: 'short' })) + '</span></div>';
     }).join('');
     var table = function (rows, label, limit) {
-      return '<section class="tablecard"><div class="scroll"><table><thead><tr><th>' + label + '</th>' + (label === 'Product' ? '<th style="text-align:right">Qty</th>' : '') + '<th style="text-align:right">Web (B2C)</th><th style="text-align:right">Lease payments</th><th style="text-align:right">Product sales (B2B)</th><th style="text-align:right">Total</th></tr></thead><tbody>' +
+      return '<section class="tablecard"><div class="scroll"><table><thead><tr><th>' + label + '</th>' + (label === 'Product' ? '<th style="text-align:right">Qty</th>' : '') + '<th style="text-align:right">Web (B2C)</th><th style="text-align:right">Lease payments</th><th style="text-align:right">B2B sales and services</th><th style="text-align:right">Total</th></tr></thead><tbody>' +
         (rows.length ? rows.slice(0, limit).map(function (x) { return '<tr><td>' + (label === 'School' ? '<a class="plain" href="' + schoolHref(x.key) + '">' + esc(x.key) + '</a>' : esc(x.key)) + '</td>' + (label === 'Product' ? '<td style="text-align:right">' + fmtNum(x.qty) + '</td>' : '') +
           '<td style="text-align:right">' + usd(x.b2c) + '</td><td style="text-align:right">' + usd(x.lease) + '</td><td style="text-align:right">' + usd(x.purchase) + '</td><td style="text-align:right"><b>' + usd(x.total) + '</b></td></tr>'; }).join('') : '<tr><td colspan="6"><div class="empty">No sales for this year yet.</div></td></tr>') +
         '</tbody></table></div>' + (rows.length > limit ? '<div class="tfoot"><span>Showing the top ' + limit + ' of ' + rows.length + '. The CSV has all of them.</span></div>' : '') + '</section>';
@@ -2291,7 +2302,7 @@
     return '<div class="row" style="justify-content:space-between"><div class="field" style="width:160px"><label for="ye-year" class="sr-only">Year</label><select id="ye-year">' + years + '</select></div>' +
       '<div class="row" style="gap:8px"><span class="small muted">' + (r.syncedAt ? 'Web orders synced ' + esc(relTime(r.syncedAt)) : 'Web orders not synced yet') + '</span>' +
       '<button type="button" class="btn sm" data-action="export-ye">' + icon('file', 14, 2) + 'Export CSV</button></div></div>' +
-      '<section class="kpis">' + k('Total revenue', usd0(total), r.year) + k('Web rentals and sales', usd0(t.b2c), 'WooCommerce, before tax') + k('Lease payments', usd0(t.lease), 'Invoices sent or paid') + k('Product sales (B2B)', usd0(t.purchase), 'Invoices sent or paid') + k('Sales tax collected', usd0(t.tax), 'Refunds ' + usd(t.refunds)) + '</section>' +
+      '<section class="kpis">' + k('Total revenue', usd0(total), r.year) + k('Web rentals and sales', usd0(t.b2c), 'WooCommerce, before tax') + k('Lease payments', usd0(t.lease), 'Invoices sent or paid') + k('B2B sales and services', usd0(t.purchase), 'Invoices sent or paid') + k('Sales tax collected', usd0(t.tax), 'Refunds ' + usd(t.refunds)) + '</section>' +
       '<section class="card"><div class="card-head"><h2>By month</h2><div class="maplegend" style="position:static;box-shadow:none;border:0;padding:0"><span><i style="background:#1F6FB5"></i>Web</span><span><i style="background:#5FA02E"></i>Lease</span><span><i style="background:#E08A1E"></i>B2B sales</span></div></div><div class="ybars">' + bars + '</div></section>' +
       '<div class="card-head"><h2>By product</h2></div>' + table(r.products, 'Product', 50) +
       '<div class="card-head"><h2>By school</h2></div>' + table(r.schools, 'School', 25);
@@ -2299,11 +2310,264 @@
 
   function exportYearEndCsv() {
     var r = state.ye;
-    var rows = [['Year', 'Group', 'Name', 'Qty', 'Web (B2C)', 'Lease payments', 'Product sales (B2B)', 'Total', 'Sales tax']];
+    var rows = [['Year', 'Group', 'Name', 'Qty', 'Web (B2C)', 'Lease payments', 'B2B sales and services', 'Total', 'Sales tax']];
     r.products.forEach(function (x) { rows.push([r.year, 'Product', x.key, x.qty, x.b2c, x.lease, x.purchase, x.total, x.tax]); });
     r.schools.forEach(function (x) { rows.push([r.year, 'School', x.key, '', x.b2c, x.lease, x.purchase, x.total, x.tax]); });
     r.months.forEach(function (x) { rows.push([r.year, 'Month', x.key, '', x.b2c, x.lease, x.purchase, x.total, x.tax]); });
     downloadCsv('pangia-year-end-' + r.year + '.csv', rows);
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Inventory                                                        */
+  /* ---------------------------------------------------------------- */
+
+  var SHIP_HINTS = {
+    Shipment: 'Units leave a warehouse for a school.',
+    Pickup: 'Units come back from a school to a warehouse.',
+    Transfer: 'Units move between two warehouses or two schools.',
+    Received: 'New units arrive from the supplier.',
+    Sale: 'Units are sold to a school and stop being ours.',
+    Count: 'You counted a location. This sets its number for that product.',
+    'Write-off': 'Units are damaged, scrapped or lost.'
+  };
+  var SHIP_CLASS = { Shipment: 'b-info', Pickup: 'b-good', Transfer: 'b-mute', Received: 'b-good', Sale: 'b-warn', Count: 'b-mute', 'Write-off': 'b-bad' };
+
+  // Same rules as schoolKey_ in Apps Script, so map pins and school pages find their inventory.
+  function schoolKey(name) {
+    return String(name || '').replace(/&amp;/gi, '&').toLowerCase().replace(/univesity/g, 'university').replace(/\bsaint\b/g, 'st').replace(/&/g, ' ')
+      .replace(/\b(and|at|the)\b/g, ' ').replace(/[^a-z0-9]/g, '');
+  }
+
+  function loadInventory(force) {
+    if (state.inv && !force) return Promise.resolve(state.inv);
+    return api('inventory').then(function (r) { state.inv = r; return r; });
+  }
+
+  function viewInventory(query) {
+    state.invTab = query.tab || state.invTab || 'stock';
+    if (query.loc) { state.invQ = query.loc; state.invTab = 'stock'; }
+    return '<header class="pagehead"><div class="titles"><h1 class="h1">Inventory</h1><p class="sub">Units at every warehouse and school, all calculated from one shipments log.</p></div></header>' +
+      '<div id="inv-body">' + (state.inv ? inventoryBody() : '<div class="kpis"><div class="skel" style="height:118px"></div><div class="skel" style="height:118px"></div><div class="skel" style="height:118px"></div><div class="skel" style="height:118px"></div></div><div class="skel" style="height:360px;margin-top:20px"></div>') + '</div>';
+  }
+
+  function paintInventory() {
+    var b = $('#inv-body');
+    if (b && parseRoute().name === 'inventory') b.innerHTML = inventoryBody();
+  }
+
+  function productName(id) {
+    var p = ((state.inv || {}).products || []).filter(function (x) { return x.id === id; })[0];
+    return p ? p.name : id;
+  }
+
+  function inventoryBody() {
+    var v = state.inv;
+    var sumKind = function (k) { return v.locations.filter(function (l) { return l.kind === k; }).reduce(function (a, l) { return a + l.total; }, 0); };
+    var crit = (v.b2c || []).filter(function (s) { return s.status === 'Critical'; }).length;
+    var tabs = [['stock', 'Stock by location'], ['log', 'Shipments log'], ['rental', 'Rental stock'], ['products', 'Products']];
+    var body = state.invTab === 'log' ? invLog() : state.invTab === 'rental' ? invRental() : state.invTab === 'products' ? invProducts() : invStock();
+    var kpiCard = function (label, value, x, note) { return '<div class="kpi"><span class="label">' + esc(label) + '</span><span class="value">' + esc(value) + '</span><span class="small muted">' + esc(note) + '</span></div>'; };
+    return '<section class="kpis" aria-label="Inventory summary">' +
+      kpiCard('In warehouses', fmtNum(sumKind('warehouse')), '', (function (n) { return n + (n === 1 ? ' location' : ' locations') + ' with stock'; })(v.locations.filter(function (l) { return l.kind === 'warehouse' && l.total; }).length)) +
+      kpiCard('Out at lease schools', fmtNum(sumKind('school')), '', 'Units College Products owns') +
+      kpiCard('Sold to schools', fmtNum(sumKind('sold')), '', 'Logged sales') +
+      kpiCard('Rental stock to check', String(crit), '', crit ? 'Schools at critical stock' : 'No critical schools') + '</section>' +
+      '<div class="row" style="justify-content:space-between;margin-top:20px"><div class="segbar" role="group" aria-label="Inventory sections">' + tabs.map(function (x) {
+        return '<button type="button" class="seg" data-invtab="' + x[0] + '" aria-pressed="' + (state.invTab === x[0]) + '">' + x[1] + '</button>';
+      }).join('') + '</div>' + (v.canEdit ? '<button type="button" class="btn primary" data-action="log-shipment">' + icon('plus', 16, 2) + 'Log a shipment</button>' : '') + '</div>' + body;
+  }
+
+  function invStock() {
+    var v = state.inv;
+    var f = state.invKind || 'all';
+    var q = norm(state.invQ || '');
+    var counts = { all: 0, warehouse: 0, school: 0, sold: 0 };
+    v.locations.forEach(function (l) { if (counts[l.kind] != null) { counts[l.kind]++; counts.all++; } });
+    var list = v.locations.filter(function (l) { return counts[l.kind] != null && (f === 'all' || l.kind === f) && (!q || norm(l.label).indexOf(q) !== -1); });
+    var kindLabel = { warehouse: 'Warehouse', school: 'Lease school', sold: 'Sold to school' };
+    var pills = [['all', 'All'], ['warehouse', 'Warehouses'], ['school', 'Lease schools'], ['sold', 'Sold']].map(function (x) {
+      return '<button type="button" class="pill sm" data-invkind="' + x[0] + '" aria-pressed="' + (f === x[0]) + '">' + x[1] + ' · ' + counts[x[0]] + '</button>';
+    }).join('');
+    return '<div class="row" style="justify-content:space-between;margin-top:16px"><div class="row" style="gap:6px">' + pills + '</div>' +
+      '<div class="field" style="width:280px"><label for="inv-q" class="sr-only">Search locations</label><input id="inv-q" type="search" placeholder="Search locations" value="' + esc(state.invQ || '') + '" autocomplete="off"></div></div>' +
+      '<section class="tablecard" aria-label="Stock by location"><div class="scroll"><table><thead><tr><th>Location</th><th>Kind</th><th>Products</th><th style="text-align:right">Units</th><th>Last movement</th></tr></thead><tbody id="inv-rows">' +
+      (list.length ? list.map(function (l) {
+        var items = Object.keys(l.items).sort(function (a, b) { return l.items[b] - l.items[a]; });
+        var name = l.school && l.kind !== 'warehouse' ? '<a class="plain" href="' + schoolHref(l.school) + '"><b>' + esc(l.label) + '</b></a>' : '<b>' + esc(l.label) + '</b>';
+        return '<tr><td>' + name + (l.type ? '<div class="small muted">' + esc(l.type) + '</div>' : '') + '</td><td><span class="badge sm ' + (l.kind === 'warehouse' ? 'b-info' : l.kind === 'sold' ? 'b-warn' : 'b-mute') + '">' + kindLabel[l.kind] + '</span></td>' +
+          '<td>' + (items.length ? '<div class="row" style="gap:6px">' + items.map(function (p) { return '<span class="chip' + (l.items[p] < 0 ? ' neg' : '') + '">' + fmtNum(l.items[p]) + ' ' + esc(productName(p)) + '</span>'; }).join('') + '</div>' : '<span class="muted small">' + (l.kind === 'warehouse' ? 'No count yet' : 'None') + '</span>') + '</td>' +
+          '<td style="text-align:right"><b>' + fmtNum(l.total) + '</b></td>' +
+          '<td class="small">' + (l.last ? esc(l.last.type) + ', ' + fmtNum(l.last.qty) + '<div class="muted">' + esc(fmtYmd(l.last.date)) + '</div>' : '<span class="muted">Nothing logged</span>') + '</td></tr>';
+      }).join('') : '<tr><td colspan="5"><div class="empty">No locations match.</div></td></tr>') + '</tbody></table></div>' +
+      '<div class="tfoot"><span>Warehouses are the storage locations on the Map. Add a Count to set a starting number, then log shipments and pickups as they happen. A negative number means more left than was counted in.</span></div></section>';
+  }
+
+  function invLog() {
+    var v = state.inv;
+    var t = state.invType || 'All';
+    var q = norm(state.invLogQ || '');
+    var list = v.shipments.filter(function (s) {
+      return (t === 'All' || s.type === t) && (!q || norm([s.fromLabel, s.toLabel, productName(s.product), s.ref, s.notes].join(' ')).indexOf(q) !== -1);
+    });
+    return '<div class="row" style="justify-content:space-between;margin-top:16px"><div class="row" style="gap:10px">' +
+      '<div class="field" style="width:180px"><label for="inv-type" class="sr-only">Type</label><select id="inv-type">' + ['All'].concat(v.options.types).map(function (x) { return '<option' + (x === t ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select></div>' +
+      '<div class="field" style="width:280px"><label for="inv-logq" class="sr-only">Search the log</label><input id="inv-logq" type="search" placeholder="Search places, products, references" value="' + esc(state.invLogQ || '') + '" autocomplete="off"></div></div>' +
+      '<button type="button" class="btn sm" data-action="export-ship">' + icon('file', 14, 2) + 'Export CSV</button></div>' +
+      '<section class="tablecard" aria-label="Shipments log"><div class="scroll"><table><thead><tr><th>Date</th><th>Type</th><th>Product</th><th style="text-align:right">Qty</th><th>From</th><th>To</th><th>Reference</th><th>By</th></tr></thead><tbody>' +
+      (list.length ? list.map(function (s) {
+        return '<tr' + (v.canEdit ? ' class="clickrow" data-action="edit-shipment" data-id="' + esc(s.id) + '" tabindex="0"' : '') + '><td style="white-space:nowrap">' + esc(fmtYmd(s.date)) + '</td>' +
+          '<td><span class="badge sm ' + (SHIP_CLASS[s.type] || 'b-mute') + '">' + esc(s.type) + '</span></td><td>' + esc(productName(s.product)) + '</td><td style="text-align:right"><b>' + fmtNum(s.qty) + '</b></td>' +
+          '<td>' + esc(s.type === 'Count' ? '' : s.fromLabel) + '</td><td>' + esc(s.toLabel) + '</td><td class="small">' + esc(s.ref) + (s.notes ? '<div class="muted">' + esc(s.notes) + '</div>' : '') + '</td><td class="small muted" style="white-space:nowrap">' + esc(s.by) + '</td></tr>';
+      }).join('') : '<tr><td colspan="8"><div class="empty">' + (v.shipments.length ? 'Nothing matches.' : 'No shipments yet. Log the first one, or add a Count for each warehouse.') + '</div></td></tr>') +
+      '</tbody></table></div>' + (v.shipmentCount > v.shipments.length ? '<div class="tfoot"><span>Showing the latest ' + v.shipments.length + ' of ' + fmtNum(v.shipmentCount) + '. The full log is in the Shipments tab of the data sheet.</span></div>' : '') + '</section>';
+  }
+
+  function invRental() {
+    var v = state.inv;
+    var rows = (v.b2c || []).slice().sort(function (a, b) { return ({ Critical: 0, Low: 1, Check: 2, Healthy: 3 }[a.status] || 4) - ({ Critical: 0, Low: 1, Check: 2, Healthy: 3 }[b.status] || 4) || a.school.localeCompare(b.school); });
+    return '<section class="tablecard" aria-label="Rental stock" style="margin-top:16px"><div class="scroll"><table><thead><tr><th>School</th><th style="width:34%">Coverage</th><th style="text-align:right">In stock</th><th style="text-align:right">Ordered</th><th>Status</th></tr></thead><tbody>' +
+      (rows.length ? rows.map(function (s) {
+        return '<tr><td><a class="plain" href="' + schoolHref(s.school) + '"><b>' + esc(s.school) + '</b></a></td><td>' + (s.ordered ? covBar(s.inStock, s.ordered, s.status) : '') + '</td>' +
+          '<td style="text-align:right">' + (s.inStock == null ? '<span class="muted">-</span>' : fmtNum(s.inStock)) + '</td><td style="text-align:right">' + fmtNum(s.ordered || 0) + '</td>' +
+          '<td>' + (s.status ? '<span class="badge sm ' + (STOCK_CLASS[s.status] || 'b-mute') + '">' + esc(s.status) + '</span>' : '') + '</td></tr>';
+      }).join('') : '<tr><td colspan="5"><div class="empty">No rental stock found in the Inventory Dashboard sheet.</div></td></tr>') +
+      '</tbody></table></div><div class="tfoot"><span>Rental (B2C) stock per school, read from the Inventory Dashboard sheet that syncs with WooCommerce.' + (state.data.inventoryDashboardUrl ? ' <a href="' + esc(safeUrl(state.data.inventoryDashboardUrl)) + '" target="_blank" rel="noopener">Open the dashboard</a>' : '') + '</span></div></section>';
+  }
+
+  function invProducts() {
+    var v = state.inv;
+    return '<div class="row" style="justify-content:flex-end;margin-top:16px">' + (v.canEdit ? '<button type="button" class="btn sm" data-action="add-product">' + icon('plus', 14, 2) + 'Add a product</button>' : '') + '</div>' +
+      '<section class="tablecard" aria-label="Products"><div class="scroll"><table><thead><tr><th>Product</th><th>Category</th><th>Also called</th><th>Status</th></tr></thead><tbody>' +
+      v.products.map(function (p) {
+        return '<tr' + (v.canEdit ? ' class="clickrow" data-action="edit-product" data-id="' + esc(p.id) + '" tabindex="0"' : '') + '><td><b>' + esc(p.name) + '</b></td><td>' + esc(p.category) + '</td><td class="small muted">' + esc(p.aliases.join(', ')) + '</td><td>' + (p.active ? '<span class="badge sm b-good">Active</span>' : '<span class="badge sm b-mute">Retired</span>') + '</td></tr>';
+      }).join('') + '</tbody></table></div><div class="tfoot"><span>"Also called" helps Pangia read notes like "3.2 CB" or "232 C" when importing.</span></div></section>';
+  }
+
+  function locOptions(selected, kinds) {
+    var v = state.inv;
+    var opt = function (val, label) { return '<option value="' + esc(val) + '"' + (val === selected ? ' selected' : '') + '>' + esc(label) + '</option>'; };
+    var wh = v.locations.filter(function (l) { return l.kind === 'warehouse'; });
+    var schools = v.schools.slice();
+    v.locations.forEach(function (l) { if (l.school && l.kind !== 'warehouse' && schools.indexOf(l.school) === -1) schools.push(l.school); });
+    schools.sort();
+    var html = '<option value="">Pick a place</option>';
+    if (kinds.indexOf('wh') !== -1) html += '<optgroup label="Warehouses and storage">' + wh.map(function (l) { return opt(l.loc, l.label); }).join('') + '</optgroup>';
+    if (kinds.indexOf('school') !== -1) html += '<optgroup label="Schools (units we own)">' + schools.map(function (s) { return opt('school:' + s, s); }).join('') + '</optgroup>';
+    if (kinds.indexOf('sold') !== -1) html += '<optgroup label="Sold to school">' + schools.map(function (s) { return opt('sold:' + s, s + ' (sold)'); }).join('') + '</optgroup>';
+    var other = [];
+    if (kinds.indexOf('supplier') !== -1) other.push(opt('supplier', 'Supplier'));
+    if (kinds.indexOf('scrap') !== -1) other.push(opt('scrap', 'Written off'));
+    if (other.length) html += '<optgroup label="Other">' + other.join('') + '</optgroup>';
+    return html;
+  }
+
+  var SHIP_LOCS = {
+    Shipment: [['wh'], ['school', 'sold']], Pickup: [['school', 'sold'], ['wh']], Transfer: [['wh', 'school'], ['wh', 'school']],
+    Received: [['supplier'], ['wh']], Sale: [['wh', 'supplier'], ['sold']], Count: [[], ['wh', 'school', 'sold']], 'Write-off': [['wh', 'school'], ['scrap']]
+  };
+
+  function openShipmentModal(s, preset) {
+    var v = state.inv;
+    if (!v || !v.canEdit) return;
+    closePalette();
+    s = s || {};
+    preset = preset || {};
+    var type = s.type || preset.type || 'Shipment';
+    var locs = SHIP_LOCS[type] || SHIP_LOCS.Shipment;
+    var from = s.from || preset.from || (type === 'Received' ? 'supplier' : '');
+    var to = s.to || preset.to || (type === 'Write-off' ? 'scrap' : '');
+    state.modal = true;
+    $('#palette-root').innerHTML = '<div class="overlay" data-action="modal-bg"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="sh-h">' +
+      '<div class="card-head"><h2 id="sh-h" style="font-family:var(--display);font-size:20px;font-weight:800">' + (s.id ? 'Edit ' + (type === 'Count' ? 'count' : 'shipment') : type === 'Count' ? 'Log a count' : 'Log a shipment') + '</h2>' +
+      '<button type="button" class="copybtn" data-action="close-modal" aria-label="Close">' + icon('x', 18, 2) + '</button></div>' +
+      '<form class="form" id="shipment-form" data-id="' + esc(s.id || '') + '" novalidate><div class="fields">' +
+      '<div class="field"><label for="sh-type">Type</label><select id="sh-type" name="type">' + v.options.types.map(function (x) { return '<option' + (x === type ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select></div>' +
+      '<div class="field"><label for="sh-date">Date</label><input id="sh-date" name="date" type="date" value="' + esc(s.date || todayYmd()) + '"></div>' +
+      '<p class="small muted" style="margin:-4px 0 0;grid-column:1/-1">' + esc(SHIP_HINTS[type]) + '</p>' +
+      '<div class="field"><label for="sh-product">Product</label><select id="sh-product" name="product"><option value="">Pick a product</option>' + v.products.filter(function (p) { return p.active || p.id === s.product; }).map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === s.product ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') + '</select></div>' +
+      '<div class="field"><label for="sh-qty">' + (type === 'Count' ? 'Counted' : 'Quantity') + '</label><input id="sh-qty" name="qty" type="number" min="0" step="1" inputmode="numeric" value="' + esc(s.qty != null ? s.qty : '') + '"></div>' +
+      (type === 'Count' ? '' : '<div class="field full"><label for="sh-from">From</label><select id="sh-from" name="from">' + locOptions(from, locs[0]) + '</select></div>') +
+      '<div class="field full"><label for="sh-to">' + (type === 'Count' ? 'Where you counted' : 'To') + '</label><select id="sh-to" name="to">' + locOptions(to, locs[1]) + '</select></div>' +
+      '<div class="field"><label for="sh-ref">Reference <span class="muted" style="font-weight:400">(optional)</span></label><input id="sh-ref" name="ref" placeholder="PO, BOL or log row" value="' + esc(s.ref || '') + '"></div>' +
+      '<div class="field"><label for="sh-notes">Notes <span class="muted" style="font-weight:400">(optional)</span></label><input id="sh-notes" name="notes" value="' + esc(s.notes || '') + '"></div>' +
+      '</div><div class="formfoot" style="border:0;padding:0">' + (s.id ? '<button type="button" class="btn sm" data-action="del-shipment">Delete</button>' : '<span></span>') +
+      '<button type="submit" class="btn primary">' + (s.id ? 'Save' : 'Log it') + '</button></div></form></div></div>';
+  }
+
+  function openProductModal(p) {
+    var v = state.inv;
+    if (!v || !v.canEdit) return;
+    p = p || { category: 'Combo', active: true, aliases: [] };
+    state.modal = true;
+    $('#palette-root').innerHTML = '<div class="overlay" data-action="modal-bg"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="pr-h">' +
+      '<div class="card-head"><h2 id="pr-h" style="font-family:var(--display);font-size:20px;font-weight:800">' + (p.id ? 'Edit product' : 'Add a product') + '</h2>' +
+      '<button type="button" class="copybtn" data-action="close-modal" aria-label="Close">' + icon('x', 18, 2) + '</button></div>' +
+      '<form class="form" id="product-form" data-id="' + esc(p.id || '') + '" novalidate><div class="fields">' +
+      '<div class="field"><label for="pr-name">Name</label><input id="pr-name" name="name" value="' + esc(p.name || '') + '"></div>' +
+      '<div class="field"><label for="pr-cat">Category</label><select id="pr-cat" name="category">' + v.options.categories.map(function (c) { return '<option' + (c === p.category ? ' selected' : '') + '>' + c + '</option>'; }).join('') + '</select></div>' +
+      '<div class="field full"><label for="pr-al">Also called <span class="muted" style="font-weight:400">(comma separated)</span></label><input id="pr-al" name="aliases" value="' + esc((p.aliases || []).join(', ')) + '"></div>' +
+      '<div class="field"><label for="pr-act">Status</label><select id="pr-act" name="active"><option value="Y"' + (p.active ? ' selected' : '') + '>Active</option><option value="N"' + (p.active ? '' : ' selected') + '>Retired</option></select></div>' +
+      '</div><div class="formfoot" style="border:0;padding:0"><span></span><button type="submit" class="btn primary">Save product</button></div></form></div></div>';
+    $('#pr-name').focus();
+  }
+
+  function invSave(action, payload, btn, msg) {
+    var label = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+    return api(action, payload).then(function (r) {
+      state.inv = r;
+      closeModal();
+      toast(msg);
+      var rt = parseRoute();
+      if (rt.name === 'inventory') paintInventory();
+      else if (rt.name === 'school') { delete state.schoolCache[rt.school]; loadSchool(rt.school); }
+      refreshInvSummary();
+    }).catch(function (err) { if (btn) { btn.disabled = false; btn.textContent = label; } if (err.code !== 'auth_expired') toast(err.message, true); });
+  }
+
+  // Rebuild the per-location summary used by the map from the fresh inventory data.
+  function refreshInvSummary() {
+    var v = state.inv, out = {};
+    if (!v) return;
+    v.locations.forEach(function (l) {
+      var key = l.kind === 'warehouse' ? 'wh:' + l.storageId : l.kind + ':' + schoolKey(l.school);
+      var prev = out[key] || { units: 0, last: null };
+      prev.units += l.total;
+      if (l.last && (!prev.last || l.last.date > prev.last.date)) prev.last = l.last;
+      out[key] = prev;
+    });
+    state.data.invSummary = out;
+  }
+
+  function exportShipmentsCsv() {
+    var v = state.inv;
+    var rows = [['Date', 'Type', 'Product', 'Qty', 'From', 'To', 'Reference', 'Notes', 'By']];
+    v.shipments.forEach(function (s) { rows.push([s.date, s.type, productName(s.product), s.qty, s.type === 'Count' ? '' : s.fromLabel, s.toLabel, s.ref, s.notes, s.by]); });
+    downloadCsv('pangia-shipments-' + todayYmd() + '.csv', rows);
+  }
+
+  function invSummaryLine(key) {
+    var x = (state.data.invSummary || {})[key];
+    if (!x) return '';
+    return '<div style="display:flex;flex-direction:column;gap:2px"><b style="font-size:15px">' + fmtNum(x.units) + ' units</b>' +
+      (x.last ? '<span class="small muted">Last: ' + esc(x.last.type) + ' of ' + fmtNum(x.last.qty) + ' on ' + esc(fmtYmd(x.last.date)) + '</span>' : '') + '</div>';
+  }
+
+  function inventoryCard(inv, schoolName) {
+    if (!inv) return '';
+    var list = function (arr) { return arr.map(function (x) { return '<span class="chip">' + fmtNum(x.qty) + ' ' + esc(x.product) + '</span>'; }).join(''); };
+    var editable = state.inv ? state.inv.canEdit : can('inventory.edit');
+    var has = inv.placed.length || inv.sold.length || inv.moves.length;
+    return '<section class="card" aria-labelledby="ic-h"><div class="card-head"><h2 id="ic-h">Inventory</h2>' +
+      '<a href="#/inventory?tab=stock&loc=' + encodeURIComponent(schoolName) + '">All inventory</a></div>' +
+      (has ? (inv.placed.length ? '<div class="pblock"><span class="legend-title">Units we own here</span><div class="row" style="gap:6px">' + list(inv.placed) + '</div></div>' : '') +
+        (inv.sold.length ? '<div class="pblock"><span class="legend-title">Sold to this school</span><div class="row" style="gap:6px">' + list(inv.sold) + '</div></div>' : '') +
+        (inv.moves.length ? '<div class="pblock"><span class="legend-title">Recent movements</span>' + inv.moves.map(function (m) {
+          return '<div class="row" style="justify-content:space-between;gap:8px"><span class="small"><span class="badge sm ' + (SHIP_CLASS[m.type] || 'b-mute') + '">' + esc(m.type) + '</span> ' + fmtNum(m.qty) + ' ' + esc(m.product) +
+            (m.type === 'Count' ? '' : '<span class="muted">, ' + esc(m.from) + ' to ' + esc(m.to) + '</span>') + '</span><span class="small muted" style="white-space:nowrap">' + esc(fmtYmd(m.date)) + '</span></div>';
+        }).join('') + '</div>' : '')
+        : '<div class="empty">No shipments logged for this school yet.</div>') +
+      (editable ? '<button type="button" class="btn" style="width:100%" data-action="log-shipment" data-school="' + esc(schoolName) + '">' + icon('plus', 16, 2) + 'Log a shipment</button>' : '') + '</section>';
   }
 
   /* ---------------------------------------------------------------- */
@@ -2352,6 +2616,11 @@
       items.push({ group: 'Go to', tag: icon('dollar', 16), label: 'Tax exemptions', sub: 'Finance', href: '#/finance?tab=exemptions', raw: true });
       items.push({ group: 'Go to', tag: icon('dollar', 16), label: 'Sales tax by state', sub: 'Finance', href: '#/finance?tab=tax', raw: true });
       items.push({ group: 'Go to', tag: icon('dollar', 16), label: 'Year-end summary', sub: 'Finance', href: '#/finance?tab=yearend', raw: true });
+    }
+    if (can('inventory')) {
+      items.push({ group: 'Go to', tag: icon('layers', 16), label: 'Inventory', sub: 'Stock by location', href: '#/inventory', raw: true });
+      items.push({ group: 'Go to', tag: icon('layers', 16), label: 'Shipments log', sub: 'Inventory', href: '#/inventory?tab=log', raw: true });
+      if (can('inventory.edit')) items.push({ group: 'Actions', tag: icon('plus', 16), label: 'Log a shipment', sub: 'Inventory', action: 'log-shipment', raw: true });
       items.push({ group: 'Actions', tag: icon('plus', 16), label: 'New invoice', sub: 'Finance', action: 'new-invoice', raw: true });
     }
     if (can('directory')) items.push({ group: 'Go to', tag: icon('school', 16), label: 'Schools', sub: 'The full directory', href: '#/schools', raw: true });
@@ -2490,6 +2759,19 @@
       }).catch(function (err) { el.disabled = false; el.textContent = 'Prepare'; if (err.code !== 'auth_expired') toast(err.message, true); });
     }
     if (name === 'edit-terms' && el) return openTermsModal(el.getAttribute('data-key'));
+    if (name === 'log-shipment') {
+      var sch = el && el.getAttribute('data-school');
+      return loadInventory().then(function () { openShipmentModal(null, sch ? { type: 'Shipment', to: 'school:' + sch } : null); }).catch(function (err) { if (err.code !== 'auth_expired') toast(err.message, true); });
+    }
+    if (name === 'edit-shipment' && el) { var es = state.inv.shipments.filter(function (x) { return x.id === el.getAttribute('data-id'); })[0]; return openShipmentModal(es); }
+    if (name === 'del-shipment') {
+      var dsf = $('#shipment-form');
+      if (!window.confirm('Delete this shipment? Stock numbers will be recalculated.')) return;
+      return invSave('saveShipment', { id: dsf.getAttribute('data-id'), remove: true }, el, 'Shipment deleted');
+    }
+    if (name === 'add-product') return openProductModal(null);
+    if (name === 'edit-product' && el) return openProductModal(state.inv.products.filter(function (x) { return x.id === el.getAttribute('data-id'); })[0]);
+    if (name === 'export-ship') return exportShipmentsCsv();
     if (name === 'sync-sales' && el) {
       el.disabled = true; el.textContent = 'Syncing...';
       toast('Reading WooCommerce orders. The first sync can take a few runs.');
@@ -2572,6 +2854,10 @@
     }
     var tk = e.target.closest('[data-taxkind]');
     if (tk) { state.taxKind = tk.getAttribute('data-taxkind'); state.taxPeriod = ''; state.tax = null; return paintFinance(); }
+    var itb = e.target.closest('[data-invtab]');
+    if (itb) { state.invTab = itb.getAttribute('data-invtab'); return paintInventory(); }
+    var ikd = e.target.closest('[data-invkind]');
+    if (ikd) { state.invKind = ikd.getAttribute('data-invkind'); return paintInventory(); }
     var ft = e.target.closest('[data-fintab]');
     if (ft) { state.finTab = ft.getAttribute('data-fintab'); return paintFinance(); }
     var ivf = e.target.closest('[data-invfilter]');
@@ -2631,6 +2917,11 @@
       state.logSearch = e.target.value;
       var lr = $('#log-rows');
       if (lr) lr.innerHTML = logRows(e.target.getAttribute('data-type'));
+    } else if (e.target.id === 'inv-q' || e.target.id === 'inv-logq') {
+      if (e.target.id === 'inv-q') state.invQ = e.target.value; else state.invLogQ = e.target.value;
+      var pos = e.target.selectionStart, id0 = e.target.id;
+      paintInventory();
+      var el2 = $('#' + id0); if (el2) { el2.focus(); try { el2.setSelectionRange(pos, pos); } catch (er) {} }
     } else if (e.target.id === 'pal-q') {
       state.palette.query = e.target.value;
       state.palette.index = 0;
@@ -2641,6 +2932,12 @@
   document.addEventListener('change', function (e) {
     if (e.target.closest && e.target.closest('#invoice-form')) updateInvoiceTotals();
     if (e.target.id === 'tax-period') { state.taxPeriod = e.target.value; return paintFinance(); }
+    if (e.target.id === 'inv-type') { state.invType = e.target.value; return paintInventory(); }
+    if (e.target.id === 'sh-type') {
+      var sf = $('#shipment-form');
+      var keep = { id: sf.getAttribute('data-id'), type: e.target.value, date: sf.elements.date.value, product: sf.elements.product.value, qty: sf.elements.qty.value, ref: sf.elements.ref.value, notes: sf.elements.notes.value };
+      return openShipmentModal(keep.id ? Object.assign({}, state.inv.shipments.filter(function (x) { return x.id === keep.id; })[0], keep, { from: '', to: '' }) : null, keep);
+    }
     if (e.target.id === 'ye-year') { state.yeYear = e.target.value; state.ye = null; return paintFinance(); }
     if (e.target.id === 'i-school' && !$('#invoice-form').getAttribute('data-id')) {
       var cu = ((state.fin || {}).customers || []).filter(function (c) { return norm(c.school) === norm(e.target.value); })[0];
@@ -2674,6 +2971,17 @@
       tb.disabled = true; tb.textContent = 'Saving...';
       return api('saveCustomer', cust).then(function () { tb.disabled = false; return finSave('saveBillingTerms', tp, tb, 'Save billing', 'Lease billing saved'); })
         .catch(function (err) { tb.disabled = false; tb.textContent = 'Save billing'; if (err.code !== 'auth_expired') toast(err.message, true); });
+    }
+    if (form.id === 'shipment-form') {
+      e.preventDefault();
+      var se = form.elements;
+      return invSave('saveShipment', { id: form.getAttribute('data-id'), type: se.type.value, date: se.date.value, product: se.product.value, qty: se.qty.value,
+        from: se.from ? se.from.value : '', to: se.to.value, ref: se.ref.value.trim(), notes: se.notes.value.trim() }, form.querySelector('[type="submit"]'), form.getAttribute('data-id') ? 'Shipment saved' : 'Shipment logged');
+    }
+    if (form.id === 'product-form') {
+      e.preventDefault();
+      var pe = form.elements;
+      return invSave('saveProduct', { id: form.getAttribute('data-id'), name: pe.name.value.trim(), category: pe.category.value, aliases: pe.aliases.value, active: pe.active.value === 'Y' }, form.querySelector('[type="submit"]'), 'Product saved');
     }
     if (form.id === 'filing-form') {
       e.preventDefault();
@@ -2815,6 +3123,7 @@
       return;
     }
     if (state.modal && e.key === 'Escape') { e.preventDefault(); closeModal(); return; }
+    if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('clickrow')) { e.preventDefault(); return doAction(e.target.getAttribute('data-action'), e.target); }
     if (!state.palette.open) return;
     if (e.key === 'Escape') { e.preventDefault(); closePalette(); }
     else if (e.key === 'ArrowDown') { e.preventDefault(); state.palette.index = Math.min(state.palette.index + 1, state.palette.items.length - 1); paintPalette(); }

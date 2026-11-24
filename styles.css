@@ -520,3 +520,6 @@ tr.totrow td { background: var(--surface2); font-weight: 600; }
 .stackbar { width: 100%; max-width: 46px; display: flex; flex-direction: column; justify-content: flex-end; height: 150px; border-radius: 8px 8px 4px 4px; overflow: hidden; background: var(--surface2); }
 .stackbar i { display: block; width: 100%; }
 @media (max-width: 640px) { .ybars { gap: 3px; } .ybar { font-size: 10px; } }
+.clickrow { cursor: pointer; }
+.clickrow:hover td, .clickrow:focus-visible td { background: var(--surface2); }
+.chip.neg { color: #B42318; }
