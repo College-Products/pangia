@@ -120,13 +120,14 @@
     var line = ' fill="none" stroke="' + fg + '" stroke-linecap="round" stroke-linejoin="round"';
     return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 34 34" aria-hidden="true">' +
       '<rect width="34" height="34" rx="10" fill="' + bg + '"></rect>' +
-      '<path d="M26.4 9.6A12.2 12.2 0 1 1 20.6 5.3"' + line + ' stroke-width="1.6"></path>' +
-      '<circle cx="24.4" cy="6.9" r="2.2" fill="#80BC41"></circle>' +
-      '<g transform="translate(17 16.4) scale(.84) translate(-17 -16.6)">' +
-      '<path d="M14.7 11.2 9.6 18.7h6.6M14.7 11.2v10.9"' + line + ' stroke-width="2.5"></path>' +
-      '<path d="M18.6 14.1a3 3 0 0 1 6 0c0 2.9-6 4.9-6 8h6.3"' + line + ' stroke-width="2.5"></path></g>' +
-      '<path d="M11.4 24.6c1.9.8 3.8.8 5.6 0s3.8-.8 5.6 0" fill="none" stroke="#80BC41" stroke-width="1.9" stroke-linecap="round"></path></svg>';
+      '<path d="M26.83 10.12A12 12 0 1 1 20.11 5.41"' + line + ' stroke-width="1.6"></path>' +
+      '<circle cx="23.88" cy="7.17" r="2.2" fill="#80BC41"></circle>' +
+      '<g transform="translate(17 16.4) scale(.82) translate(-17.25 -16.65)">' +
+      '<path d="M14.7 11.2 9.6 18.7h6.6M14.7 11.2v10.9"' + line + ' stroke-width="2.56"></path>' +
+      '<path d="M18.6 14.1a3 3 0 0 1 6 0c0 2.9-6 4.9-6 8h6.3"' + line + ' stroke-width="2.56"></path></g>' +
+      '<path d="M11.4 24.3c1.9.8 3.8.8 5.6 0s3.8-.8 5.6 0" fill="none" stroke="#80BC41" stroke-width="1.9" stroke-linecap="round"></path></svg>';
   }
+
 
   function ring(score, size) {
     var sz = size || 44;
@@ -322,7 +323,7 @@
   /* Splash screen                                                    */
   /* ---------------------------------------------------------------- */
 
-  var SPLASH_HTML = '<div class="splash" id="splash" role="status" aria-live="polite"><svg class="splash-mark" width="84" height="84" viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="10" fill="#054D80"/><path class="sp-ring" pathLength="100" d="M26.4 9.6A12.2 12.2 0 1 1 20.6 5.3" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><g class="sp-digits" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(17 16.4) scale(.84) translate(-17 -16.6)"><path d="M14.7 11.2 9.6 18.7h6.6M14.7 11.2v10.9"/><path d="M18.6 14.1a3 3 0 0 1 6 0c0 2.9-6 4.9-6 8h6.3"/></g></g><path class="sp-wave" pathLength="100" d="M11.4 24.6c1.9.8 3.8.8 5.6 0s3.8-.8 5.6 0" fill="none" stroke="#80BC41" stroke-width="1.9" stroke-linecap="round"/><g class="sp-orbit"><circle cx="24.4" cy="6.9" r="2.2" fill="#80BC41"/></g></svg><div class="splash-name"><b>Pangia</b><small>by College Products</small></div><div class="splash-bar" aria-hidden="true"><i></i></div><div class="splash-msg" id="splash-msg">Waking up Pangia</div></div>';
+  var SPLASH_HTML = '<div class="splash" id="splash" role="status" aria-live="polite"><svg class="splash-mark" width="84" height="84" viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="10" fill="#054D80"/><path class="sp-ring" pathLength="100" d="M26.83 10.12A12 12 0 1 1 20.11 5.41" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><g class="sp-digits" fill="none" stroke="#fff" stroke-width="2.56" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(17 16.4) scale(.82) translate(-17.25 -16.65)"><path d="M14.7 11.2 9.6 18.7h6.6M14.7 11.2v10.9"/><path d="M18.6 14.1a3 3 0 0 1 6 0c0 2.9-6 4.9-6 8h6.3"/></g></g><path class="sp-wave" pathLength="100" d="M11.4 24.3c1.9.8 3.8.8 5.6 0s3.8-.8 5.6 0" fill="none" stroke="#80BC41" stroke-width="1.9" stroke-linecap="round"/><g class="sp-orbit"><circle cx="23.88" cy="7.17" r="2.2" fill="#80BC41"/></g></svg><div class="splash-name"><b>Pangia</b><small>by College Products</small></div><div class="splash-bar" aria-hidden="true"><i></i></div><div class="splash-msg" id="splash-msg">Waking up Pangia</div></div>';
   var SPLASH_MSGS = ['Waking up Pangia', 'Loading your schools', 'Checking stock and contracts', 'Finding the answer to everything'];
   var splashShownAt = Date.now();
   var splashTimer = null;
@@ -381,7 +382,7 @@
       '<div class="row" style="gap:12px">' + logo(40, true) + '<span style="font-family:var(--display);font-weight:800;font-size:24px">Pangia</span></div>' +
       '<div style="display:flex;flex-direction:column;gap:20px;max-width:520px">' +
       '<span class="season-tag">College Products · internal</span>' +
-      '<h1>Every school.<br>One place.</h1>' +
+      '<h1>One for all.</h1>' +
       '<p>Products, inventory, contracts and every log for the schools you work with, the moment you sign in.</p></div>' +
       '<div class="roles"><span><i></i>Managers</span><span><i></i>Campus Managers</span><span><i></i>School Admins</span></div>' +
       '</section>' +
