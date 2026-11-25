@@ -3019,12 +3019,12 @@
   /* Season board: delivery and collection progress per school        */
   /* ---------------------------------------------------------------- */
 
-  function defaultSeasonMode() { var m = new Date().getMonth(); return (m >= 5 && m <= 9) ? 'delivery' : 'collection'; }
+  function defaultSeasonMode() { var m = new Date().getMonth(); return (m >= 5 && m <= 8) ? 'delivery' : m >= 9 ? 'fall' : 'spring'; }
 
   function viewSeason(query) {
-    state.seasonMode = query.mode || state.seasonMode || defaultSeasonMode();
+    state.seasonMode = query.mode === 'collection' ? defaultSeasonMode() : (query.mode || state.seasonMode || defaultSeasonMode());
     return '<header class="pagehead"><div class="titles"><h1 class="h1">Season board</h1><p class="sub">Live delivery and collection progress for every rental school, from WooCommerce order statuses.</p></div>' +
-      '<div class="segbar" role="group" aria-label="Season">' + [['delivery', 'Deliveries'], ['collection', 'Collections']].map(function (x) { return '<button type="button" class="seg" data-seasonmode="' + x[0] + '" aria-pressed="' + (state.seasonMode === x[0]) + '">' + x[1] + '</button>'; }).join('') + '</div></header>' +
+      '<div class="segbar" role="group" aria-label="Season">' + [['delivery', 'Deliveries'], ['fall', 'Fall collection'], ['spring', 'Spring collection']].map(function (x) { return '<button type="button" class="seg" data-seasonmode="' + x[0] + '" aria-pressed="' + (state.seasonMode === x[0]) + '">' + x[1] + '</button>'; }).join('') + '</div></header>' +
       '<div id="season-body"><div class="kpis"><div class="skel" style="height:118px"></div><div class="skel" style="height:118px"></div><div class="skel" style="height:118px"></div><div class="skel" style="height:118px"></div></div><div class="skel" style="height:420px;margin-top:20px"></div></div>';
   }
 
@@ -3049,20 +3049,20 @@
       k(del ? 'Orders delivered' : 'Orders collected', t.done, pct + '% of ' + fmtNum(t.orders), 'done') +
       k('Still to go', t.orders - t.done, fmtNum(t.units - t.unitsDone) + ' units', 'left') +
       k(del ? 'Units delivered' : 'Units back', t.unitsDone, 'of ' + fmtNum(t.units), 'units') +
-      k('Schools behind', t.behind, del ? 'Past move-in with orders left' : 'Past move-out with pickups left', 'behind') + '</section>' +
+      k('Schools behind', t.behind, del ? 'Past move-in with orders left' : s.mode === 'spring' ? 'Past move-out with pickups left' : 'Needs move-out dates to track', 'behind') + '</section>' +
       '<section class="card"><div class="card-head"><h2>' + (del ? 'Deliveries' : 'Collections') + ' per day, last 3 weeks</h2><span class="small muted">' + (s.syncedAt ? 'Orders synced ' + esc(relTime(s.syncedAt)) : '') + '</span></div><div class="sbars">' + bars + '</div></section>' +
-      '<section class="tablecard" aria-label="Progress by school"><div class="scroll"><table><thead><tr><th>School</th><th style="width:30%">Progress</th><th style="text-align:right">' + (del ? 'Delivered' : 'Collected') + '</th><th style="text-align:right">To go</th><th>' + (del ? 'Move-in' : 'Move-out') + '</th><th>Status</th><th></th></tr></thead><tbody>' +
+      '<section class="tablecard" aria-label="Progress by school"><div class="scroll"><table><thead><tr><th>School</th><th style="width:30%">Progress</th><th style="text-align:right">' + (del ? 'Delivered' : 'Collected') + '</th><th style="text-align:right">To go</th><th>' + (del ? 'Move-in' : s.mode === 'spring' ? 'Move-out' : '') + '</th><th>Status</th><th></th></tr></thead><tbody>' +
       (s.schools.length ? s.schools.map(function (x) {
         var sch = (state.data.schools || []).filter(function (y) { return norm(y.name) === norm(x.school); })[0];
         var log = sch && safeUrl(sch[del ? 'deliveryLogUrl' : 'collectionLogUrl']);
         return '<tr><td>' + (sch ? '<a class="plain" href="' + schoolHref(sch.name) + '"><b>' + esc(x.school) + '</b></a>' : '<b>' + esc(x.school) + '</b>') + '<div class="small muted">' + fmtNum(x.unitsDone) + ' of ' + fmtNum(x.units) + ' units</div></td>' +
           '<td><div class="sprog"><i class="' + (x.state === 'Behind' ? 'bad' : x.state === 'Done' ? 'good' : '') + '" style="width:' + x.pct + '%"></i></div><span class="small muted">' + x.pct + '%</span></td>' +
           '<td style="text-align:right">' + fmtNum(x.done) + '</td><td style="text-align:right"><b>' + fmtNum(x.remaining) + '</b></td>' +
-          '<td class="small">' + (x.due ? esc(fmtYmd(x.due)) : '<span class="muted">Not set</span>') + '</td>' +
+          '<td class="small">' + (x.due ? esc(fmtYmd(x.due)) : s.mode === 'fall' ? '' : '<span class="muted">Not set</span>') + '</td>' +
           '<td><span class="badge sm ' + (SEASON_BADGE[x.state] || 'b-mute') + '">' + esc(x.state) + '</span></td>' +
           '<td>' + (log ? '<a class="small" href="' + esc(log) + '" target="_blank" rel="noopener">Log</a>' : '') + '</td></tr>';
       }).join('') : '<tr><td colspan="7"><div class="empty">No rental orders this school year yet.</div></td></tr>') +
-      '</tbody></table></div><div class="tfoot"><span>' + (del ? 'Delivered means the order is Delivered, Completed or Returned in WooCommerce.' : 'Collected means the order is Returned in WooCommerce. Not Home and Damaged stay in the Collection Logs.') + ' Counts this school year from ' + esc(fmtYmd(s.since)) + '. Move-in and move-out dates come from each school\'s registered info. Refreshes every 5 minutes.</span></div></section>';
+      '</tbody></table></div><div class="tfoot"><span>' + (del ? 'Delivered means the order is Delivered, Completed or Returned in WooCommerce.' : (s.mode === 'fall' ? 'Fall collection counts fall semester rentals only.' : 'Spring collection counts spring semester and academic year rentals.') + ' Collected means the order is Returned in WooCommerce. Not Home and Damaged stay in the Collection Logs.') + ' Counts this school year from ' + esc(fmtYmd(s.since)) + '. Move-in and move-out dates come from each school\'s registered info. Refreshes every 5 minutes.</span></div></section>';
     countUp(b);
   }
 
