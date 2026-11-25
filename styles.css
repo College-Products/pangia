@@ -523,3 +523,8 @@ tr.totrow td { background: var(--surface2); font-weight: 600; }
 .clickrow { cursor: pointer; }
 .clickrow:hover td, .clickrow:focus-visible td { background: var(--surface2); }
 .chip.neg { color: #B42318; }
+.towel { display: inline-flex; vertical-align: middle; margin-left: 6px; }
+.egg { margin: 16px; padding: 14px 16px; border-radius: 12px; background: var(--surface2); font-family: var(--display); font-weight: 800; font-size: 16px; color: var(--ink); }
+.spin42 { animation: spin42 1s cubic-bezier(.4, 0, .2, 1); }
+@keyframes spin42 { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin42 { animation: none; } }

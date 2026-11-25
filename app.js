@@ -250,7 +250,8 @@
     var root = $('#toast-root');
     var el = document.createElement('div');
     el.className = 'toast' + (isErr ? ' err' : '');
-    el.textContent = msg;
+    // Hitchhiker's easter egg: every error ends calmly.
+    el.textContent = isErr && !/don't panic/i.test(msg) ? String(msg).replace(/\s*$/, '') + " Don't Panic." : msg;
     root.appendChild(el);
     setTimeout(function () { el.remove(); }, isErr ? 6000 : 3200);
   }
@@ -335,6 +336,7 @@
     if (gsiReady) google.accounts.id.disableAutoSelect();
     closePalette();
     renderSignIn();
+    toast('So long, and thanks for all the fish.');
   }
 
   /* ---------------------------------------------------------------- */
@@ -354,6 +356,8 @@
       splashShownAt = Date.now();
     }
     el.classList.remove('out');
+    // 1 in 42 loads ends on a different line.
+    if (Math.random() < 1 / 42) SPLASH_MSGS[SPLASH_MSGS.length - 1] = 'Computing the answer. ETA 7.5 million years';
     var i = 0;
     clearInterval(splashTimer);
     splashTimer = setInterval(function () {
@@ -502,7 +506,7 @@
 
     $('#app').innerHTML =
       '<div class="shell">' +
-      '<aside class="side"><a class="brand" href="#/">' + logo() + '<span><b>Pangia</b><small>by College Products</small></span></a>' +
+      '<aside class="side"><a class="brand" href="#/">' + logo() + '<span><b>Pangia' + towel() + '</b><small>by College Products</small></span></a>' +
       '<nav class="nav" aria-label="Main">' + nav + '</nav>' +
       '<div class="me"><div class="avatar">' + (pic ? '<img src="' + esc(pic) + '" alt="" referrerpolicy="no-referrer">' : esc(initials(u.name))) + '</div>' +
       '<div class="who"><b>' + esc(u.name) + '</b><span>' + esc(scopeNote) + '</span></div>' +
@@ -585,7 +589,13 @@
   /* Shared view pieces                                               */
   /* ---------------------------------------------------------------- */
 
+  function isTowelDay() { var n = new Date(); return n.getMonth() === 4 && n.getDate() === 25; }
+  function towel() {
+    return isTowelDay() ? '<span class="towel" title="Happy Towel Day. Do you know where your towel is?" aria-label="Towel Day"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="1.5" fill="#80BC41"/><path d="M2 6h12M2 10h12" stroke="#fff" stroke-width="1"/></svg></span>' : '';
+  }
+
   function greeting() {
+    if (isTowelDay()) return 'Happy Towel Day';
     var h = new Date().getHours();
     return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
   }
@@ -703,7 +713,7 @@
 
   function schoolRows() {
     var list = filteredSchools();
-    if (!list.length) return '<tr><td colspan="7"><div class="empty">No schools match.</div></td></tr>';
+    if (!list.length) return '<tr><td colspan="7"><div class="empty">No schools match. Space is big. Really big.</div></td></tr>';
     return list.map(function (s) {
       var prods = s.products.length ? s.products.map(function (p) { return '<span class="chip">' + esc(p.label) + '</span>'; }).join('') : '<span class="small muted">Not in inventory</span>';
       var cov = s.ordered != null ?
@@ -996,7 +1006,7 @@
   function logRows(type) {
     var q = state.logSearch.trim().toLowerCase();
     var list = state.data.schools.filter(function (s) { return !q || s.name.toLowerCase().indexOf(q) !== -1; });
-    if (!list.length) return '<div class="empty">No schools match.</div>';
+    if (!list.length) return '<div class="empty">No schools match. Space is big. Really big.</div>';
     return list.map(function (s) {
       var u = safeUrl(s[LOG_FIELD[type]]);
       var note = type === 'cm' && s.openTasks != null ? (s.openTasks ? s.openTasks + ' open task' + (s.openTasks === 1 ? '' : 's') : 'No open tasks') : (u ? 'Open in Google Sheets' : 'Not connected yet');
@@ -2679,7 +2689,8 @@
           (it.external ? icon('ext', 16) : (i === state.palette.index ? '<kbd>Enter</kbd>' : '')) + '</button>';
       });
     });
-    if (!flat.length) html = '<div class="empty" style="margin:16px">Nothing matches "' + esc(state.palette.query) + '". Try a school name or a log.</div>';
+    if (!flat.length) html = '<div class="empty" style="margin:16px">Nothing here. Space is big. Really big. Try a school name or a log.</div>';
+    if (/^(42|forty[ -]?two|(the )?meaning of life|(the )?answer to (life|everything).*|life,? the universe,? and everything)$/.test(q)) html = '<div class="egg">42. Now what was the question?</div>' + (flat.length ? html : '');
     state.palette.items = flat;
     if (state.palette.index >= flat.length) state.palette.index = Math.max(0, flat.length - 1);
     $('#pal-list').innerHTML = html;
@@ -2843,7 +2854,18 @@
     }
   }
 
+  var logoClicks = [];
   document.addEventListener('click', function (e) {
+    var brandMark = e.target.closest('.brand svg');
+    if (brandMark) {
+      var now = Date.now();
+      logoClicks = logoClicks.filter(function (t) { return now - t < 4000; }).concat([now]);
+      if (logoClicks.length >= 7) {
+        logoClicks = [];
+        brandMark.classList.remove('spin42'); void brandMark.getBoundingClientRect(); brandMark.classList.add('spin42');
+        toast('Mostly harmless.');
+      }
+    }
     var pal = e.target.closest('[data-pal]');
     if (pal) { e.preventDefault(); return runPaletteItem(Number(pal.getAttribute('data-pal'))); }
     if (e.target.matches('[data-action="palette-bg"]')) return closePalette();
