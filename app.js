@@ -2569,14 +2569,29 @@
 
   function invRental() {
     var v = state.inv;
-    var rows = (v.b2c || []).slice().sort(function (a, b) { return ({ Critical: 0, Low: 1, Check: 2, Healthy: 3 }[a.status] || 4) - ({ Critical: 0, Low: 1, Check: 2, Healthy: 3 }[b.status] || 4) || a.school.localeCompare(b.school); });
-    return '<section class="tablecard" aria-label="Rental stock" style="margin-top:16px"><div class="scroll"><table><thead><tr><th>School</th><th style="width:34%">Coverage</th><th style="text-align:right">In stock</th><th style="text-align:right">Ordered</th><th>Status</th></tr></thead><tbody>' +
-      (rows.length ? rows.map(function (s) {
-        return '<tr><td><a class="plain" href="' + schoolHref(s.school) + '"><b>' + esc(s.school) + '</b></a></td><td>' + (s.ordered ? covBar(s.inStock, s.ordered, s.status) : '') + '</td>' +
-          '<td style="text-align:right">' + (s.inStock == null ? '<span class="muted">-</span>' : fmtNum(s.inStock)) + '</td><td style="text-align:right">' + fmtNum(s.ordered || 0) + '</td>' +
-          '<td>' + (s.status ? '<span class="badge sm ' + (STOCK_CLASS[s.status] || 'b-mute') + '">' + esc(s.status) + '</span>' : '') + '</td></tr>';
-      }).join('') : '<tr><td colspan="5"><div class="empty">No rental stock found in the Inventory Dashboard sheet.</div></td></tr>') +
-      '</tbody></table></div><div class="tfoot"><span>Rental (B2C) stock per school, read from the Inventory Dashboard sheet that syncs with WooCommerce.' + (state.data.inventoryDashboardUrl ? ' <a href="' + esc(safeUrl(state.data.inventoryDashboardUrl)) + '" target="_blank" rel="noopener">Open the dashboard</a>' : '') + '</span></div></section>';
+    var rank = { Critical: 0, Low: 1, Check: 2, Healthy: 3 };
+    var pf = state.invRentalProduct || 'All';
+    var names = {};
+    (v.b2c || []).forEach(function (s) { (s.products || []).forEach(function (p) { names[p.label] = true; }); });
+    var schools = (v.b2c || []).map(function (s) {
+      var prods = (s.products || []).filter(function (p) { return pf === 'All' || p.label === pf; })
+        .sort(function (a, b) { return (rank[a.status] != null ? rank[a.status] : 4) - (rank[b.status] != null ? rank[b.status] : 4) || a.label.localeCompare(b.label); });
+      return { school: s.school, prods: prods, worst: prods.length ? (rank[prods[0].status] != null ? rank[prods[0].status] : 4) : 9 };
+    }).filter(function (s) { return s.prods.length; }).sort(function (a, b) { return a.worst - b.worst || a.school.localeCompare(b.school); });
+    var rows = '';
+    schools.forEach(function (s) {
+      s.prods.forEach(function (p, i) {
+        rows += '<tr' + (i === 0 ? ' class="grpstart"' : '') + '><td>' + (i === 0 ? '<a class="plain" href="' + schoolHref(s.school) + '"><b>' + esc(s.school) + '</b></a>' : '') + '</td>' +
+          '<td>' + esc(p.label) + '</td><td>' + (p.ordered ? covBar(p.inStock, p.ordered, p.status) : '') + '</td>' +
+          '<td style="text-align:right">' + (p.inStock == null ? '<span class="muted">-</span>' : fmtNum(p.inStock)) + '</td><td style="text-align:right">' + fmtNum(p.ordered || 0) + '</td>' +
+          '<td>' + (p.status ? '<span class="badge sm ' + (STOCK_CLASS[p.status] || 'b-mute') + '">' + esc(p.status) + '</span>' : '') + '</td></tr>';
+      });
+    });
+    return '<div class="row" style="justify-content:flex-end;margin-top:16px"><div class="field" style="width:260px"><label for="inv-rprod" class="sr-only">Product</label><select id="inv-rprod">' +
+      ['All'].concat(Object.keys(names).sort()).map(function (n) { return '<option value="' + esc(n) + '"' + (n === pf ? ' selected' : '') + '>' + (n === 'All' ? 'All products' : esc(n)) + '</option>'; }).join('') + '</select></div></div>' +
+      '<section class="tablecard" aria-label="Rental stock"><div class="scroll"><table><thead><tr><th>School</th><th>Product</th><th style="width:28%">Coverage</th><th style="text-align:right">In stock</th><th style="text-align:right">Ordered</th><th>Status</th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="6"><div class="empty">No rental stock found in the Inventory Dashboard sheet.</div></td></tr>') +
+      '</tbody></table></div><div class="tfoot"><span>Rental (B2C) stock per school and product, read from the Inventory Dashboard sheet that syncs with WooCommerce. Worst status first.' + (state.data.inventoryDashboardUrl ? ' <a href="' + esc(safeUrl(state.data.inventoryDashboardUrl)) + '" target="_blank" rel="noopener">Open the dashboard</a>' : '') + '</span></div></section>';
   }
 
   function invProducts() {
@@ -3388,6 +3403,7 @@
     if (e.target.closest && e.target.closest('#invoice-form')) updateInvoiceTotals();
     if (e.target.id === 'tax-period') { state.taxPeriod = e.target.value; return paintFinance(); }
     if (e.target.id === 'inv-type') { state.invType = e.target.value; return paintInventory(); }
+    if (e.target.id === 'inv-rprod') { state.invRentalProduct = e.target.value; return paintInventory(); }
     if (e.target.id === 'sh-type') {
       var sf = $('#shipment-form');
       var keep = { id: sf.getAttribute('data-id'), type: e.target.value, date: sf.elements.date.value, product: sf.elements.product.value, qty: sf.elements.qty.value, ref: sf.elements.ref.value, notes: sf.elements.notes.value };

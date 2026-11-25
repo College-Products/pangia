@@ -622,3 +622,4 @@ button.month:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .sky-beat { animation: skybeat 1s ease 2; }
 @keyframes skybeat { 30% { transform: scale(1.12); } 60% { transform: scale(.98); } }
 .sky-in.calm > *, .sky-in.calm .sky-new { animation: none !important; }
+tr.grpstart td { border-top: 1px solid var(--border-strong, var(--border)); }
