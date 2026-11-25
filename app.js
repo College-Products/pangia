@@ -2510,8 +2510,8 @@
     var sumKind = function (k) { return v.locations.filter(function (l) { return l.kind === k || locGroup(l) === k; }).reduce(function (a, l) { return a + l.total; }, 0); };
     var otherAtSchools = sumKind('other');
     var crit = (v.b2c || []).filter(function (s) { return s.status === 'Critical'; }).length;
-    var tabs = [['stock', 'Stock by location'], ['log', 'Shipments log'], ['rental', 'Rental stock'], ['products', 'Products']];
-    var body = state.invTab === 'log' ? invLog() : state.invTab === 'rental' ? invRental() : state.invTab === 'products' ? invProducts() : invStock();
+    var tabs = [['stock', 'Stock by location'], ['log', 'Shipments log'], ['rental', 'Rental stock'], ['restock', 'Restock planner'], ['products', 'Products']];
+    var body = state.invTab === 'log' ? invLog() : state.invTab === 'rental' ? invRental() : state.invTab === 'restock' ? invRestock() : state.invTab === 'products' ? invProducts() : invStock();
     var kpiCard = function (label, value, x, note) { return '<div class="kpi"><span class="label">' + esc(label) + '</span><span class="value">' + esc(value) + '</span><span class="small muted">' + esc(note) + '</span></div>'; };
     return '<section class="kpis" aria-label="Inventory summary">' +
       kpiCard('In warehouses', fmtNum(sumKind('warehouse')), '', (function (n) { return n + (n === 1 ? ' location' : ' locations') + ' with stock'; })(v.locations.filter(function (l) { return l.kind === 'warehouse' && l.total; }).length)) +
@@ -3077,6 +3077,58 @@
   }
 
   /* ---------------------------------------------------------------- */
+  /* Restock planner (Inventory tab)                                  */
+  /* ---------------------------------------------------------------- */
+
+  function restockGrowth() { var g = 10; try { g = Number(localStorage.getItem('pangia_growth')); if (!isFinite(g) || localStorage.getItem('pangia_growth') == null) g = 10; } catch (e) { g = 10; } return g; }
+
+  function restockRows() {
+    var r = state.restock, g = restockGrowth() / 100, pf = state.rsProduct || 'All';
+    return r.rows.filter(function (x) { return pf === 'All' || x.productName === pf; }).map(function (x) {
+      var base = Math.max(x.last, x.now);
+      var forecast = Math.ceil(base * (1 + g));
+      var onHand = (x.atSchool || 0) + (x.inStorage || 0);
+      return Object.assign({}, x, { forecast: forecast, onHand: onHand, order: Math.max(0, forecast - onHand), noStock: x.atSchool == null && !x.inStorage });
+    }).filter(function (x) { return !state.rsShort || x.order > 0; })
+      .sort(function (a, b) { return b.order - a.order || a.school.localeCompare(b.school); });
+  }
+
+  function invRestock() {
+    var r = state.restock;
+    if (!r) {
+      api('restock').then(function (d) { state.restock = d; paintInventory(); }).catch(function (err) { if (err.code !== 'auth_expired') toast(err.message, true); });
+      return '<div class="skel" style="height:420px;margin-top:16px"></div>';
+    }
+    var rows = restockRows();
+    var byProduct = {};
+    rows.forEach(function (x) { byProduct[x.productName] = (byProduct[x.productName] || 0) + x.order; });
+    var names = {}; r.rows.forEach(function (x) { names[x.productName] = true; });
+    var pf = state.rsProduct || 'All';
+    var totals = Object.keys(byProduct).filter(function (k) { return byProduct[k] > 0; }).sort(function (a, b) { return byProduct[b] - byProduct[a]; });
+    return '<div class="row" style="justify-content:space-between;margin-top:16px;gap:12px"><div class="row" style="gap:12px">' +
+      '<div class="field" style="width:150px"><label for="rs-growth">Growth %</label><input id="rs-growth" type="number" step="1" value="' + restockGrowth() + '"></div>' +
+      '<div class="field" style="width:240px"><label for="rs-product">Product</label><select id="rs-product">' + ['All'].concat(Object.keys(names).sort()).map(function (n) { return '<option value="' + esc(n) + '"' + (n === pf ? ' selected' : '') + '>' + (n === 'All' ? 'All products' : esc(n)) + '</option>'; }).join('') + '</select></div>' +
+      '<label class="row" style="gap:8px;align-self:flex-end;padding-bottom:10px"><input type="checkbox" id="rs-short"' + (state.rsShort ? ' checked' : '') + '> Only schools that need units</label></div>' +
+      '<button type="button" class="btn sm" data-action="export-restock" style="align-self:flex-end">' + icon('file', 14, 2) + 'Export purchase list</button></div>' +
+      '<section class="card" style="gap:10px;margin:16px 0"><div class="card-head"><h2>Draft purchase list</h2><span class="small muted">Forecast for ' + esc(r.thisSeason.replace(/^(\d{4})-(\d{2})$/, function (m, a, b) { return (Number(a) + 1) + '-' + String(Number(b) + 1).padStart(2, '0'); })) + ' at +' + restockGrowth() + '%</span></div>' +
+      (totals.length ? '<div class="row" style="gap:8px">' + totals.map(function (k) { return '<span class="chip">' + fmtNum(byProduct[k]) + ' ' + esc(k) + '</span>'; }).join('') + '</div>' : '<div class="empty">Nothing to order at this growth rate.</div>') + '</section>' +
+      '<section class="tablecard" aria-label="Restock by school"><div class="scroll"><table><thead><tr><th>School</th><th>Product</th><th style="text-align:right">Last season</th><th style="text-align:right">This season</th><th style="text-align:right">Forecast</th><th style="text-align:right">On hand</th><th style="text-align:right">Suggested order</th></tr></thead><tbody>' +
+      (rows.length ? rows.map(function (x) {
+        return '<tr><td><a class="plain" href="' + schoolHref(x.school) + '"><b>' + esc(x.school) + '</b></a></td><td>' + esc(x.productName) + '</td>' +
+          '<td style="text-align:right">' + fmtNum(x.last) + '</td><td style="text-align:right">' + fmtNum(x.now) + '</td><td style="text-align:right">' + fmtNum(x.forecast) + '</td>' +
+          '<td style="text-align:right" title="At the school ' + fmtNum(x.atSchool || 0) + ', in its storage ' + fmtNum(x.inStorage || 0) + '">' + (x.noStock ? '<span class="muted">No count</span>' : fmtNum(x.onHand)) + '</td>' +
+          '<td style="text-align:right">' + (x.order ? '<b class="rs-need">' + fmtNum(x.order) + '</b>' : '<span class="muted">0</span>') + '</td></tr>';
+      }).join('') : '<tr><td colspan="7"><div class="empty">No rental orders found for these seasons.</div></td></tr>') +
+      '</tbody></table></div><div class="tfoot"><span>Forecast = the higher of last season (' + esc(r.lastSeason) + ') and this season so far, plus ' + restockGrowth() + '%. On hand = rental stock at the school (Inventory Dashboard) plus units in the school\'s storage. Suggested order = forecast minus on hand. Growth % is saved in this browser.</span></div></section>';
+  }
+
+  function exportRestockCsv() {
+    var rows = [['School', 'Product', 'Last season', 'This season so far', 'Forecast', 'On hand', 'Suggested order']];
+    restockRows().forEach(function (x) { rows.push([x.school, x.productName, x.last, x.now, x.forecast, x.noStock ? '' : x.onHand, x.order]); });
+    downloadCsv('pangia-restock-plan-' + todayYmd() + '.csv', rows);
+  }
+
+  /* ---------------------------------------------------------------- */
   /* Command palette (Ctrl+K)                                         */
   /* ---------------------------------------------------------------- */
 
@@ -3126,6 +3178,7 @@
     if (can('inventory')) {
       items.push({ group: 'Go to', tag: icon('layers', 16), label: 'Inventory', sub: 'Stock by location', href: '#/inventory', raw: true });
       items.push({ group: 'Go to', tag: icon('spark', 16), label: 'Season board', sub: 'Delivery and collection progress', href: '#/season', raw: true });
+      items.push({ group: 'Go to', tag: icon('layers', 16), label: 'Restock planner', sub: 'Inventory', href: '#/inventory?tab=restock', raw: true });
       items.push({ group: 'Go to', tag: icon('layers', 16), label: 'Shipments log', sub: 'Inventory', href: '#/inventory?tab=log', raw: true });
       if (can('inventory.edit')) items.push({ group: 'Actions', tag: icon('plus', 16), label: 'Log a shipment', sub: 'Inventory', action: 'log-shipment', raw: true });
       items.push({ group: 'Actions', tag: icon('plus', 16), label: 'New invoice', sub: 'Finance', action: 'new-invoice', raw: true });
@@ -3292,6 +3345,7 @@
     if (name === 'add-product') return openProductModal(null);
     if (name === 'edit-product' && el) return openProductModal(state.inv.products.filter(function (x) { return x.id === el.getAttribute('data-id'); })[0]);
     if (name === 'export-ship') return exportShipmentsCsv();
+    if (name === 'export-restock') return exportRestockCsv();
     if (name === 'sync-sales' && el) {
       el.disabled = true; el.textContent = 'Syncing...';
       toast('Reading WooCommerce orders. The first sync can take a few runs.');
@@ -3471,6 +3525,9 @@
     if (e.target.id === 'tax-period') { state.taxPeriod = e.target.value; return paintFinance(); }
     if (e.target.id === 'inv-type') { state.invType = e.target.value; return paintInventory(); }
     if (e.target.id === 'inv-rprod') { state.invRentalProduct = e.target.value; return paintInventory(); }
+    if (e.target.id === 'rs-growth') { var gv = Math.max(-90, Math.min(300, Math.round(Number(e.target.value) || 0))); try { localStorage.setItem('pangia_growth', String(gv)); } catch (er) { /* private mode */ } return paintInventory(); }
+    if (e.target.id === 'rs-product') { state.rsProduct = e.target.value; return paintInventory(); }
+    if (e.target.id === 'rs-short') { state.rsShort = e.target.checked; return paintInventory(); }
     if (e.target.id === 'sh-type') {
       var sf = $('#shipment-form');
       var keep = { id: sf.getAttribute('data-id'), type: e.target.value, date: sf.elements.date.value, product: sf.elements.product.value, qty: sf.elements.qty.value, ref: sf.elements.ref.value, notes: sf.elements.notes.value };
