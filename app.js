@@ -548,7 +548,7 @@
     var u = d.user;
     var r = route.name;
     var nav = '';
-    var invLink = can('inventory') ? navLink('#/inventory', 'layers', 'Inventory', r === 'inventory') : '';
+    var invLink = (can('inventory') ? navLink('#/inventory', 'layers', 'Inventory', r === 'inventory') : '') + (can('logs') || can('inventory') ? navLink('#/season', 'spark', 'Season board', r === 'season') : '');
     var logNav = '<span class="nav-label">Logs</span>' +
       navLink('#/logs/cm', 'cm', 'CM Logs', route.type === 'cm', u.role === 'Campus Manager' && d.schools.reduce(function (a, s) { return a + (s.openTasks || 0); }, 0) ? '<span class="count">' + d.schools.reduce(function (a, s) { return a + (s.openTasks || 0); }, 0) + '</span>' : '') +
       navLink('#/logs/delivery', 'delivery', 'Delivery Logs', route.type === 'delivery') +
@@ -619,7 +619,7 @@
       h = h.slice(0, qIndex);
     }
     var parts = h.split('/');
-    if (parts[0] && ['school', 'logs', 'schools', 'contracts', 'contacts', 'map', 'assets', 'finance', 'inventory'].indexOf(parts[0]) === -1) return { name: 'lost', query: query };
+    if (parts[0] && ['school', 'logs', 'schools', 'contracts', 'contacts', 'map', 'assets', 'finance', 'inventory', 'season'].indexOf(parts[0]) === -1) return { name: 'lost', query: query };
     if (parts[0] === 'school' && parts[1]) return { name: 'school', school: decodeURIComponent(parts.slice(1).join('/')), query: query };
     if (parts[0] === 'logs' && LOG_NAMES[parts[1]]) return { name: 'logs', type: parts[1], query: query };
     if (parts[0] === 'schools' && can('directory')) return { name: 'schools', query: query };
@@ -629,6 +629,7 @@
     if (parts[0] === 'assets' && can('assets')) return { name: 'assets', query: query };
     if (parts[0] === 'finance' && can('finance')) return { name: 'finance', query: query };
     if (parts[0] === 'inventory' && can('inventory')) return { name: 'inventory', query: query };
+    if (parts[0] === 'season' && (can('logs') || can('inventory'))) return { name: 'season', query: query };
     return { name: 'home', query: query };
   }
 
@@ -655,6 +656,7 @@
     else if (route.name === 'finance') html = viewFinance(route.query);
     else if (route.name === 'inventory') html = viewInventory(route.query);
     else if (route.name === 'lost') html = viewLost();
+    else if (route.name === 'season') html = viewSeason(route.query);
     else if (r === 'Manager') html = viewManagerHome();
     else if (isTeam()) html = viewTeamHome();
     else if (r === 'Campus Manager') html = viewCampusHome();
@@ -669,6 +671,7 @@
     }
     if (route.name === 'school' && r !== 'School Admin') loadSchool(route.school);
     if (route.name === 'map') initMap(route.query);
+    if (route.name === 'season') { loadSeason(); startSeasonRefresh(); }
     if (route.name === 'inventory') loadInventory(true).then(paintInventory).catch(function (err) { if (err.code !== 'auth_expired') { var b = $('#inv-body'); if (b) b.innerHTML = '<div class="empty">' + esc(err.message) + '</div>'; } });
     if (route.name === 'finance') loadFinance(true).then(paintFinance).catch(function (err) { if (err.code !== 'auth_expired') { var b = $('#fin-body'); if (b) b.innerHTML = '<div class="empty">' + esc(err.message) + '</div>'; } });
   }
@@ -2900,7 +2903,7 @@
   /* Notes: a quiet full-screen page whose words come from Apps Script */
   /* ---------------------------------------------------------------- */
 
-  var KNOWN_ROUTES = ['', 'school', 'logs', 'schools', 'contracts', 'contacts', 'map', 'assets', 'finance', 'inventory'];
+  var KNOWN_ROUTES = ['', 'school', 'logs', 'schools', 'contracts', 'contacts', 'map', 'assets', 'finance', 'inventory', 'season'];
   function noteWord() {
     var h = location.hash.replace(/^#\/?/, '');
     return /^[a-z0-9]{4,40}$/i.test(h) && KNOWN_ROUTES.indexOf(h.toLowerCase()) === -1 ? h : '';
@@ -3013,6 +3016,67 @@
   }
 
   /* ---------------------------------------------------------------- */
+  /* Season board: delivery and collection progress per school        */
+  /* ---------------------------------------------------------------- */
+
+  function defaultSeasonMode() { var m = new Date().getMonth(); return (m >= 5 && m <= 9) ? 'delivery' : 'collection'; }
+
+  function viewSeason(query) {
+    state.seasonMode = query.mode || state.seasonMode || defaultSeasonMode();
+    return '<header class="pagehead"><div class="titles"><h1 class="h1">Season board</h1><p class="sub">Live delivery and collection progress for every rental school, from WooCommerce order statuses.</p></div>' +
+      '<div class="segbar" role="group" aria-label="Season">' + [['delivery', 'Deliveries'], ['collection', 'Collections']].map(function (x) { return '<button type="button" class="seg" data-seasonmode="' + x[0] + '" aria-pressed="' + (state.seasonMode === x[0]) + '">' + x[1] + '</button>'; }).join('') + '</div></header>' +
+      '<div id="season-body"><div class="kpis"><div class="skel" style="height:118px"></div><div class="skel" style="height:118px"></div><div class="skel" style="height:118px"></div><div class="skel" style="height:118px"></div></div><div class="skel" style="height:420px;margin-top:20px"></div></div>';
+  }
+
+  function loadSeason() {
+    return api('season', { mode: state.seasonMode }).then(function (r) { state.season = r; paintSeason(); })
+      .catch(function (err) { if (err.code !== 'auth_expired') { var b = $('#season-body'); if (b) b.innerHTML = '<div class="empty">' + esc(err.message) + '</div>'; } });
+  }
+
+  var SEASON_BADGE = { Behind: 'b-bad', 'In progress': 'b-info', 'Not started': 'b-mute', Done: 'b-good' };
+
+  function paintSeason() {
+    var b = $('#season-body'), s = state.season;
+    if (!b || !s || parseRoute().name !== 'season') return;
+    var del = s.mode === 'delivery';
+    var t = s.totals, pct = t.orders ? Math.round(t.done / t.orders * 100) : 0;
+    var max = Math.max.apply(null, s.days.map(function (d) { return d.n; }).concat([1]));
+    var k = function (label, v, note, key) { return '<div class="kpi"><span class="label">' + esc(label) + '</span><span class="value" data-count="' + v + '" data-key="' + key + '">' + fmtNum(v) + '</span><span class="small muted">' + esc(note) + '</span></div>'; };
+    var bars = s.days.map(function (d) {
+      return '<div class="sbar" title="' + esc(fmtYmd(d.d)) + ': ' + d.n + '"><i style="height:' + Math.max(2, Math.round(d.n / max * 110)) + 'px"></i><span>' + esc(fmtDate(d.d + 'T12:00:00', { day: 'numeric' })) + '</span></div>';
+    }).join('');
+    b.innerHTML = '<section class="kpis">' +
+      k(del ? 'Orders delivered' : 'Orders collected', t.done, pct + '% of ' + fmtNum(t.orders), 'done') +
+      k('Still to go', t.orders - t.done, fmtNum(t.units - t.unitsDone) + ' units', 'left') +
+      k(del ? 'Units delivered' : 'Units back', t.unitsDone, 'of ' + fmtNum(t.units), 'units') +
+      k('Schools behind', t.behind, del ? 'Past move-in with orders left' : 'Past move-out with pickups left', 'behind') + '</section>' +
+      '<section class="card"><div class="card-head"><h2>' + (del ? 'Deliveries' : 'Collections') + ' per day, last 3 weeks</h2><span class="small muted">' + (s.syncedAt ? 'Orders synced ' + esc(relTime(s.syncedAt)) : '') + '</span></div><div class="sbars">' + bars + '</div></section>' +
+      '<section class="tablecard" aria-label="Progress by school"><div class="scroll"><table><thead><tr><th>School</th><th style="width:30%">Progress</th><th style="text-align:right">' + (del ? 'Delivered' : 'Collected') + '</th><th style="text-align:right">To go</th><th>' + (del ? 'Move-in' : 'Move-out') + '</th><th>Status</th><th></th></tr></thead><tbody>' +
+      (s.schools.length ? s.schools.map(function (x) {
+        var sch = (state.data.schools || []).filter(function (y) { return norm(y.name) === norm(x.school); })[0];
+        var log = sch && safeUrl(sch[del ? 'deliveryLogUrl' : 'collectionLogUrl']);
+        return '<tr><td>' + (sch ? '<a class="plain" href="' + schoolHref(sch.name) + '"><b>' + esc(x.school) + '</b></a>' : '<b>' + esc(x.school) + '</b>') + '<div class="small muted">' + fmtNum(x.unitsDone) + ' of ' + fmtNum(x.units) + ' units</div></td>' +
+          '<td><div class="sprog"><i class="' + (x.state === 'Behind' ? 'bad' : x.state === 'Done' ? 'good' : '') + '" style="width:' + x.pct + '%"></i></div><span class="small muted">' + x.pct + '%</span></td>' +
+          '<td style="text-align:right">' + fmtNum(x.done) + '</td><td style="text-align:right"><b>' + fmtNum(x.remaining) + '</b></td>' +
+          '<td class="small">' + (x.due ? esc(fmtYmd(x.due)) : '<span class="muted">Not set</span>') + '</td>' +
+          '<td><span class="badge sm ' + (SEASON_BADGE[x.state] || 'b-mute') + '">' + esc(x.state) + '</span></td>' +
+          '<td>' + (log ? '<a class="small" href="' + esc(log) + '" target="_blank" rel="noopener">Log</a>' : '') + '</td></tr>';
+      }).join('') : '<tr><td colspan="7"><div class="empty">No rental orders this school year yet.</div></td></tr>') +
+      '</tbody></table></div><div class="tfoot"><span>' + (del ? 'Delivered means the order is Delivered, Completed or Returned in WooCommerce.' : 'Collected means the order is Returned in WooCommerce. Not Home and Damaged stay in the Collection Logs.') + ' Counts this school year from ' + esc(fmtYmd(s.since)) + '. Move-in and move-out dates come from each school\'s registered info. Refreshes every 5 minutes.</span></div></section>';
+    countUp(b);
+  }
+
+  var seasonTimer = null;
+  function startSeasonRefresh() {
+    clearInterval(seasonTimer);
+    seasonTimer = setInterval(function () {
+      if (parseRoute().name !== 'season') { clearInterval(seasonTimer); return; }
+      if (document.hidden || state.modal) return;
+      api('season', { mode: state.seasonMode }).then(function (r) { state.season = r; paintSeason(); }).catch(function () { /* next time */ });
+    }, 5 * 60 * 1000);
+  }
+
+  /* ---------------------------------------------------------------- */
   /* Command palette (Ctrl+K)                                         */
   /* ---------------------------------------------------------------- */
 
@@ -3061,6 +3125,7 @@
     }
     if (can('inventory')) {
       items.push({ group: 'Go to', tag: icon('layers', 16), label: 'Inventory', sub: 'Stock by location', href: '#/inventory', raw: true });
+      items.push({ group: 'Go to', tag: icon('spark', 16), label: 'Season board', sub: 'Delivery and collection progress', href: '#/season', raw: true });
       items.push({ group: 'Go to', tag: icon('layers', 16), label: 'Shipments log', sub: 'Inventory', href: '#/inventory?tab=log', raw: true });
       if (can('inventory.edit')) items.push({ group: 'Actions', tag: icon('plus', 16), label: 'Log a shipment', sub: 'Inventory', action: 'log-shipment', raw: true });
       items.push({ group: 'Actions', tag: icon('plus', 16), label: 'New invoice', sub: 'Finance', action: 'new-invoice', raw: true });
@@ -3323,6 +3388,8 @@
     if (tk) { state.taxKind = tk.getAttribute('data-taxkind'); state.taxPeriod = ''; state.tax = null; return paintFinance(); }
     var mo = e.target.closest('[data-month]');
     if (mo) { var mi = Number(mo.getAttribute('data-month')); state.monthOpen = state.monthOpen === mi ? null : mi; var yy = window.scrollY; renderRoute(true); window.scrollTo(0, yy); return; }
+    var smo = e.target.closest('[data-seasonmode]');
+    if (smo) { state.seasonMode = smo.getAttribute('data-seasonmode'); state.season = null; location.hash = '#/season?mode=' + state.seasonMode; return; }
     var itb = e.target.closest('[data-invtab]');
     if (itb) { state.invTab = itb.getAttribute('data-invtab'); return paintInventory(); }
     var ikd = e.target.closest('[data-invkind]');

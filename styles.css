@@ -623,3 +623,11 @@ button.month:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 @keyframes skybeat { 30% { transform: scale(1.12); } 60% { transform: scale(.98); } }
 .sky-in.calm > *, .sky-in.calm .sky-new { animation: none !important; }
 tr.grpstart td { border-top: 1px solid var(--border-strong, var(--border)); }
+/* Season board */
+.sbars { display: grid; grid-template-columns: repeat(21, minmax(0, 1fr)); gap: 4px; align-items: end; height: 140px; }
+.sbar { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 10px; color: var(--muted); }
+.sbar i { display: block; width: 100%; max-width: 22px; border-radius: 5px 5px 2px 2px; background: #1F6FB5; }
+.sprog { height: 8px; border-radius: 6px; background: var(--surface2); overflow: hidden; margin-bottom: 4px; }
+.sprog i { display: block; height: 100%; background: #1F6FB5; border-radius: 6px; }
+.sprog i.good { background: #3F8F2E; } .sprog i.bad { background: #C2410C; }
+#season-body { display: flex; flex-direction: column; gap: 20px; }
