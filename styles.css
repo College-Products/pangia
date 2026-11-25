@@ -577,3 +577,5 @@ button.month:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .homecard-row { display: flex; align-items: center; gap: 6px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; }
 .homecard-row input { width: 18px; height: 18px; accent-color: var(--brand, #054D80); }
 @media (max-width: 640px) { .homegrid { grid-template-columns: 1fr; } }
+.flashbang { position: fixed; inset: 0; z-index: 200; background: #fff; pointer-events: none; animation: flashbang .85s ease-out forwards; }
+@keyframes flashbang { 0% { opacity: 0; } 8% { opacity: 1; } 100% { opacity: 0; } }

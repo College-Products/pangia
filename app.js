@@ -246,6 +246,25 @@
     var btn = $('[data-action="theme"]');
     if (btn) { btn.innerHTML = icon(dark ? 'sun' : 'moon'); btn.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode'); }
     if (state.mapObj) setMapTiles();
+    themeJoke(dark);
+  }
+
+  var TO_LIGHT = ['Flashbang out! Shield your eyes.', 'AAH, MY EYES. Light mode activated.', 'Sunglasses recommended beyond this point.', 'You chose violence. Light mode is on.'];
+  var TO_DARK = ['Ahh, so much better.', 'Welcome back to the dark side.', 'Your retinas thank you.'];
+  var lastJoke = -1;
+  function themeJoke(dark) {
+    var list = dark ? TO_DARK : TO_LIGHT;
+    var i = Math.floor(Math.random() * list.length);
+    if (i === lastJoke) i = (i + 1) % list.length;
+    lastJoke = i;
+    if (!dark && !calmMotion()) {
+      var f = document.createElement('div');
+      f.className = 'flashbang';
+      f.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(f);
+      setTimeout(function () { f.remove(); }, 900);
+    }
+    toast(list[i]);
   }
   function toast(msg, isErr) {
     var root = $('#toast-root');
