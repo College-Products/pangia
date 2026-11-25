@@ -2491,6 +2491,12 @@
     if (b && parseRoute().name === 'inventory') b.innerHTML = inventoryBody();
   }
 
+  // Units at a school are grouped by the school's program: rental (students rent online) or lease.
+  function locGroup(l) {
+    if (l.kind !== 'school') return l.kind;
+    return /rental/i.test(l.program || '') ? 'rental' : /lease/i.test(l.program || '') ? 'lease' : 'other';
+  }
+
   function productName(id) {
     var p = ((state.inv || {}).products || []).filter(function (x) { return x.id === id; })[0];
     return p ? p.name : id;
@@ -2498,14 +2504,16 @@
 
   function inventoryBody() {
     var v = state.inv;
-    var sumKind = function (k) { return v.locations.filter(function (l) { return l.kind === k; }).reduce(function (a, l) { return a + l.total; }, 0); };
+    var sumKind = function (k) { return v.locations.filter(function (l) { return l.kind === k || locGroup(l) === k; }).reduce(function (a, l) { return a + l.total; }, 0); };
+    var otherAtSchools = sumKind('other');
     var crit = (v.b2c || []).filter(function (s) { return s.status === 'Critical'; }).length;
     var tabs = [['stock', 'Stock by location'], ['log', 'Shipments log'], ['rental', 'Rental stock'], ['products', 'Products']];
     var body = state.invTab === 'log' ? invLog() : state.invTab === 'rental' ? invRental() : state.invTab === 'products' ? invProducts() : invStock();
     var kpiCard = function (label, value, x, note) { return '<div class="kpi"><span class="label">' + esc(label) + '</span><span class="value">' + esc(value) + '</span><span class="small muted">' + esc(note) + '</span></div>'; };
     return '<section class="kpis" aria-label="Inventory summary">' +
       kpiCard('In warehouses', fmtNum(sumKind('warehouse')), '', (function (n) { return n + (n === 1 ? ' location' : ' locations') + ' with stock'; })(v.locations.filter(function (l) { return l.kind === 'warehouse' && l.total; }).length)) +
-      kpiCard('Out at lease schools', fmtNum(sumKind('school')), '', 'Units College Products owns') +
+      kpiCard('At rental schools', fmtNum(sumKind('rental')), '', 'Units placed for student rentals') +
+      kpiCard('At lease schools', fmtNum(sumKind('lease') + otherAtSchools), '', otherAtSchools ? fmtNum(otherAtSchools) + ' at schools with no program set' : 'Units leased to schools') +
       kpiCard('Sold to schools', fmtNum(sumKind('sold')), '', 'Logged sales') +
       kpiCard('Rental stock to check', String(crit), '', crit ? 'Schools at critical stock' : 'No critical schools') + '</section>' +
       '<div class="row" style="justify-content:space-between;margin-top:20px"><div class="segbar" role="group" aria-label="Inventory sections">' + tabs.map(function (x) {
@@ -2517,12 +2525,12 @@
     var v = state.inv;
     var f = state.invKind || 'all';
     var q = norm(state.invQ || '');
-    var counts = { all: 0, warehouse: 0, school: 0, sold: 0 };
-    v.locations.forEach(function (l) { if (counts[l.kind] != null) { counts[l.kind]++; counts.all++; } });
-    var list = v.locations.filter(function (l) { return counts[l.kind] != null && (f === 'all' || l.kind === f) && (!q || norm(l.label).indexOf(q) !== -1); });
-    var kindLabel = { warehouse: 'Warehouse', school: 'Lease school', sold: 'Sold to school' };
-    var pills = [['all', 'All'], ['warehouse', 'Warehouses'], ['school', 'Lease schools'], ['sold', 'Sold']].map(function (x) {
-      return '<button type="button" class="pill sm" data-invkind="' + x[0] + '" aria-pressed="' + (f === x[0]) + '">' + x[1] + ' · ' + counts[x[0]] + '</button>';
+    var counts = { all: 0, warehouse: 0, rental: 0, lease: 0, other: 0, sold: 0 };
+    v.locations.forEach(function (l) { var g = locGroup(l); if (counts[g] != null) { counts[g]++; counts.all++; } });
+    var list = v.locations.filter(function (l) { var g = locGroup(l); return counts[g] != null && (f === 'all' || g === f || (f === 'lease' && g === 'other')) && (!q || norm(l.label).indexOf(q) !== -1); });
+    var kindLabel = { warehouse: 'Warehouse', rental: 'Rental school', lease: 'Lease school', other: 'At school', sold: 'Sold to school' };
+    var pills = [['all', 'All'], ['warehouse', 'Warehouses'], ['rental', 'Rental schools'], ['lease', 'Lease schools'], ['sold', 'Sold']].map(function (x) {
+      return '<button type="button" class="pill sm" data-invkind="' + x[0] + '" aria-pressed="' + (f === x[0]) + '">' + x[1] + ' · ' + (counts[x[0]] + (x[0] === 'lease' ? counts.other : 0)) + '</button>';
     }).join('');
     return '<div class="row" style="justify-content:space-between;margin-top:16px"><div class="row" style="gap:6px">' + pills + '</div>' +
       '<div class="field" style="width:280px"><label for="inv-q" class="sr-only">Search locations</label><input id="inv-q" type="search" placeholder="Search locations" value="' + esc(state.invQ || '') + '" autocomplete="off"></div></div>' +
@@ -2530,7 +2538,7 @@
       (list.length ? list.map(function (l) {
         var items = Object.keys(l.items).sort(function (a, b) { return l.items[b] - l.items[a]; });
         var name = l.school && l.kind !== 'warehouse' ? '<a class="plain" href="' + schoolHref(l.school) + '"><b>' + esc(l.label) + '</b></a>' : '<b>' + esc(l.label) + '</b>';
-        return '<tr><td>' + name + (l.type ? '<div class="small muted">' + esc(l.type) + '</div>' : '') + '</td><td><span class="badge sm ' + (l.kind === 'warehouse' ? 'b-info' : l.kind === 'sold' ? 'b-warn' : 'b-mute') + '">' + kindLabel[l.kind] + '</span></td>' +
+        return '<tr><td>' + name + (l.type ? '<div class="small muted">' + esc(l.type) + '</div>' : '') + '</td><td><span class="badge sm ' + (l.kind === 'warehouse' ? 'b-info' : l.kind === 'sold' ? 'b-warn' : locGroup(l) === 'rental' ? 'b-good' : 'b-mute') + '">' + kindLabel[locGroup(l)] + '</span></td>' +
           '<td>' + (items.length ? '<div class="row" style="gap:6px">' + items.map(function (p) { return '<span class="chip' + (l.items[p] < 0 ? ' neg' : '') + '">' + fmtNum(l.items[p]) + ' ' + esc(productName(p)) + '</span>'; }).join('') + '</div>' : '<span class="muted small">' + (l.kind === 'warehouse' ? 'No count yet' : 'None') + '</span>') + '</td>' +
           '<td style="text-align:right"><b>' + fmtNum(l.total) + '</b></td>' +
           '<td class="small">' + (l.last ? esc(l.last.type) + ', ' + fmtNum(l.last.qty) + '<div class="muted">' + esc(fmtYmd(l.last.date)) + '</div>' : '<span class="muted">Nothing logged</span>') + '</td></tr>';
@@ -2551,8 +2559,9 @@
       '<button type="button" class="btn sm" data-action="export-ship">' + icon('file', 14, 2) + 'Export CSV</button></div>' +
       '<section class="tablecard" aria-label="Shipments log"><div class="scroll"><table><thead><tr><th>Date</th><th>Type</th><th>Product</th><th style="text-align:right">Qty</th><th>From</th><th>To</th><th>Reference</th><th>By</th></tr></thead><tbody>' +
       (list.length ? list.map(function (s) {
-        return '<tr' + (v.canEdit ? ' class="clickrow" data-action="edit-shipment" data-id="' + esc(s.id) + '" tabindex="0"' : '') + '><td style="white-space:nowrap">' + esc(fmtYmd(s.date)) + '</td>' +
-          '<td><span class="badge sm ' + (SHIP_CLASS[s.type] || 'b-mute') + '">' + esc(s.type) + '</span></td><td>' + esc(productName(s.product)) + '</td><td style="text-align:right"><b>' + fmtNum(s.qty) + '</b></td>' +
+        var auto = s.source === 'WooCommerce';
+        return '<tr' + (v.canEdit && !auto ? ' class="clickrow" data-action="edit-shipment" data-id="' + esc(s.id) + '" tabindex="0"' : '') + '><td style="white-space:nowrap">' + esc(fmtYmd(s.date)) + '</td>' +
+          '<td><span class="badge sm ' + (SHIP_CLASS[s.type] || 'b-mute') + '">' + esc(s.type) + '</span>' + (auto ? ' <span class="badge sm b-info" title="Calculated from WooCommerce order statuses. Not editable here.">Auto</span>' : '') + '</td><td>' + esc(productName(s.product)) + '</td><td style="text-align:right"><b>' + fmtNum(s.qty) + '</b></td>' +
           '<td>' + esc(s.type === 'Count' ? '' : s.fromLabel) + '</td><td>' + esc(s.toLabel) + '</td><td class="small">' + esc(s.ref) + (s.notes ? '<div class="muted">' + esc(s.notes) + '</div>' : '') + '</td><td class="small muted" style="white-space:nowrap">' + esc(s.by) + '</td></tr>';
       }).join('') : '<tr><td colspan="8"><div class="empty">' + (v.shipments.length ? 'Nothing matches.' : 'No shipments yet. Log the first one, or add a Count for each warehouse.') + '</div></td></tr>') +
       '</tbody></table></div>' + (v.shipmentCount > v.shipments.length ? '<div class="tfoot"><span>Showing the latest ' + v.shipments.length + ' of ' + fmtNum(v.shipmentCount) + '. The full log is in the Shipments tab of the data sheet.</span></div>' : '') + '</section>';
@@ -2588,7 +2597,7 @@
     schools.sort();
     var html = '<option value="">Pick a place</option>';
     if (kinds.indexOf('wh') !== -1) html += '<optgroup label="Warehouses and storage">' + wh.map(function (l) { return opt(l.loc, l.label); }).join('') + '</optgroup>';
-    if (kinds.indexOf('school') !== -1) html += '<optgroup label="Schools (units we own)">' + schools.map(function (s) { return opt('school:' + s, s); }).join('') + '</optgroup>';
+    if (kinds.indexOf('school') !== -1) html += '<optgroup label="Schools (rental or lease, units we own)">' + schools.map(function (s) { return opt('school:' + s, s); }).join('') + '</optgroup>';
     if (kinds.indexOf('sold') !== -1) html += '<optgroup label="Sold to school">' + schools.map(function (s) { return opt('sold:' + s, s + ' (sold)'); }).join('') + '</optgroup>';
     var other = [];
     if (kinds.indexOf('supplier') !== -1) other.push(opt('supplier', 'Supplier'));
