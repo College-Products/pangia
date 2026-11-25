@@ -2928,6 +2928,22 @@
     };
     if (calmMotion()) box.classList.add('calm');
     show();
+    // The second answer button runs away from the pointer and from taps.
+    var dodges = 0;
+    var dodge = function (el) {
+      dodges++;
+      var w = el.offsetWidth, h = el.offsetHeight, vw = window.innerWidth, vh = window.innerHeight;
+      if (el.style.position !== 'fixed') { var r = el.getBoundingClientRect(); var ph = document.createElement('span'); ph.style.cssText = 'display:inline-block;width:' + w + 'px;height:' + h + 'px'; el.parentNode.insertBefore(ph, el); $('.sky').appendChild(el); el.style.position = 'fixed'; el.style.left = r.left + 'px'; el.style.top = r.top + 'px'; el.style.zIndex = 5; el.style.margin = 0; void el.offsetWidth; }
+      el.style.transition = 'left .25s ease, top .25s ease';
+      el.style.left = Math.round(16 + Math.random() * Math.max(0, vw - w - 32)) + 'px';
+      el.style.top = Math.round(16 + Math.random() * Math.max(0, vh - h - 32)) + 'px';
+      if (dodges === 6) el.textContent = 'Nope';
+      if (dodges === 12) el.textContent = 'Nice try';
+    };
+    var skyRoot = $('.sky');
+    skyRoot.addEventListener('pointerover', function (ev) { var t = ev.target.closest('[data-sky="think"]'); if (t && ev.pointerType === 'mouse') dodge(t); });
+    skyRoot.addEventListener('pointerdown', function (ev) { var t = ev.target.closest('[data-sky="think"]'); if (t) { ev.preventDefault(); dodge(t); } });
+    skyRoot.addEventListener('focusin', function (ev) { var t = ev.target.closest && ev.target.closest('[data-sky="think"]'); if (t) { t.blur(); dodge(t); } });
     box.addEventListener('click', function (ev) {
       var nx = ev.target.closest('[data-skynext]');
       if (nx) {
@@ -2942,7 +2958,9 @@
       }
       var btn = ev.target.closest('[data-sky]');
       if (!btn) return;
+      if (btn.getAttribute('data-sky') === 'think') { dodge(btn); return; }
       var yes = btn.getAttribute('data-sky') === 'yes';
+      var stray = $('.sky [data-sky="think"]'); if (stray) stray.remove();
       var msg = yes ? d.yes : d.think;
       $('#sky-act').outerHTML = '<div class="sky-yay"><h2 class="sky-q">' + e(msg[0]) + '</h2><p class="sky-dim">' + e(msg[1]) + '</p></div>';
       if (yes) { var mk = box.querySelector('.sky-mark'); if (mk) mk.classList.add('sky-beat'); skyCelebrate(); }
