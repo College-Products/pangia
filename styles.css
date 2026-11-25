@@ -579,3 +579,46 @@ button.month:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 @media (max-width: 640px) { .homegrid { grid-template-columns: 1fr; } }
 .flashbang { position: fixed; inset: 0; z-index: 200; background: #fff; pointer-events: none; animation: flashbang .85s ease-out forwards; }
 @keyframes flashbang { 0% { opacity: 0; } 8% { opacity: 1; } 100% { opacity: 0; } }
+/* Notes page */
+.sky { position: fixed; inset: 0; overflow-y: auto; background: radial-gradient(ellipse at 50% 30%, #0E2A4A 0%, #060B18 70%); color: #E9EEF7; display: flex; justify-content: center; }
+.sky-stars { position: fixed; inset: 0; pointer-events: none; }
+.sky-stars i { position: absolute; border-radius: 50%; background: #fff; opacity: .2; animation: twinkle 4s ease-in-out infinite; }
+@keyframes twinkle { 50% { opacity: .9; } }
+.sky-in { position: relative; z-index: 1; max-width: 620px; width: 100%; padding: 12vh 24px 80px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 18px; }
+.sky-mark { position: relative; width: 96px; height: 96px; margin-bottom: 14px; flex: none; }
+.sky-mark svg { display: block; }
+.sky-morph .sky-a, .sky-morph .sky-b { position: absolute; inset: 0; }
+.sky-morph .sky-a { animation: skyout 1.2s .6s ease forwards; }
+.sky-morph .sky-b { opacity: 0; transform: scale(.6); animation: skyin 1.2s 1s cubic-bezier(.2, .8, .3, 1.3) forwards; }
+@keyframes skyout { to { opacity: 0; transform: scale(.6) rotate(-20deg); } }
+@keyframes skyin { to { opacity: 1; transform: scale(1); } }
+.sky-step { opacity: 0; transform: translateY(10px); animation: skystep .9s var(--d) ease forwards; }
+@keyframes skystep { to { opacity: 1; transform: none; } }
+.sky-in.calm .sky-step, .sky-in.calm .sky-b { animation: none; opacity: 1; transform: none; }
+.sky-in.calm .sky-a { display: none; }
+.sky-h { font-family: var(--display); font-size: clamp(28px, 5vw, 40px); font-weight: 800; margin: 0; color: #fff; }
+.sky-q { font-family: var(--display); font-size: clamp(24px, 4vw, 32px); font-weight: 800; margin: 8px 0 0; color: #fff; }
+.sky-dim { color: #9FB2CC; margin: 0; font-size: 15px; line-height: 1.6; }
+.sky-card { width: 100%; text-align: left; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); border-radius: 18px; padding: 18px 22px; display: flex; flex-direction: column; gap: 4px; }
+.sky-card b { font-size: 18px; color: #fff; }
+.sky-kicker { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: #80BC41; font-weight: 700; }
+.sky-card ul { margin: 10px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; color: #DCE5F2; line-height: 1.55; }
+.sky-row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+.sky-btn { font: inherit; font-weight: 700; font-size: 16px; padding: 12px 28px; border-radius: 999px; border: 0; cursor: pointer; background: #F06A8B; color: #fff; text-decoration: none; transition: transform .15s ease; }
+.sky-btn:hover { transform: translateY(-2px); }
+.sky-btn.ghost { background: transparent; color: #E9EEF7; border: 1px solid rgba(255,255,255,.35); }
+.sky-btn:disabled { opacity: .6; cursor: default; transform: none; }
+.sky-yay { display: flex; flex-direction: column; gap: 6px; align-items: center; animation: skystep .8s ease both; }
+.sky-bit { position: fixed; top: -40px; z-index: 2; pointer-events: none; animation: skyfall linear forwards; }
+@keyframes skyfall { to { transform: translate(var(--sway), 110vh) rotate(260deg); } }
+.sky-in { min-height: 70vh; justify-content: center; padding-top: 8vh; }
+.sky-fade > * { animation: skystep .7s ease both; }
+.sky-fade > *:nth-child(2) { animation-delay: .25s; }
+.sky-fade > *:nth-child(3) { animation-delay: .6s; }
+.sky-fade > *:nth-child(4) { animation-delay: .9s; }
+.sky-lead { font-size: clamp(18px, 2.6vw, 22px); line-height: 1.6; color: #DCE5F2; margin: 0; max-width: 520px; }
+.sky-next { margin-top: 10px; }
+.sky-new { animation: skystep .6s ease both; }
+.sky-beat { animation: skybeat 1s ease 2; }
+@keyframes skybeat { 30% { transform: scale(1.12); } 60% { transform: scale(.98); } }
+.sky-in.calm > *, .sky-in.calm .sky-new { animation: none !important; }

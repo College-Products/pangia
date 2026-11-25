@@ -2873,6 +2873,104 @@
   }
 
   /* ---------------------------------------------------------------- */
+  /* Notes: a quiet full-screen page whose words come from Apps Script */
+  /* ---------------------------------------------------------------- */
+
+  var KNOWN_ROUTES = ['', 'school', 'logs', 'schools', 'contracts', 'contacts', 'map', 'assets', 'finance', 'inventory'];
+  function noteWord() {
+    var h = location.hash.replace(/^#\/?/, '');
+    return /^[a-z0-9]{4,40}$/i.test(h) && KNOWN_ROUTES.indexOf(h.toLowerCase()) === -1 ? h : '';
+  }
+
+  // Asks Apps Script about an unknown one-word link. Resolves true if it opened a note.
+  function tryNote() {
+    var w = noteWord();
+    if (!w) return Promise.resolve(false);
+    return fetch(CFG.API_URL, { method: 'POST', body: JSON.stringify({ action: 'note', payload: { w: w } }) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { if (!j.ok) return false; renderNote(j.data); return true; })
+      .catch(function () { return false; });
+  }
+
+  var NOTE_HEART = '<svg width="96" height="96" viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="10" fill="#054D80"/><path d="M17 26.5s-8.5-5.2-8.5-11a4.6 4.6 0 0 1 8.5-2.4 4.6 4.6 0 0 1 8.5 2.4c0 5.8-8.5 11-8.5 11z" fill="#F06A8B"/><circle cx="23.88" cy="7.17" r="2.2" fill="#80BC41"/></svg>';
+
+  function renderNote(d) {
+    hideSplash();
+    closePalette(); closeModal();
+    var stars = '';
+    for (var i = 0; i < 90; i++) stars += '<i style="left:' + (Math.random() * 100).toFixed(2) + '%;top:' + (Math.random() * 100).toFixed(2) + '%;animation-delay:' + (Math.random() * 4).toFixed(2) + 's;width:' + (Math.random() < .15 ? 3 : 2) + 'px;height:' + (Math.random() < .15 ? 3 : 2) + 'px"></i>';
+    $('#app').innerHTML = '<main class="sky" aria-live="polite"><div class="sky-stars" aria-hidden="true">' + stars + '</div><div class="sky-in" id="sky-in"></div></main>';
+    var box = $('#sky-in');
+    var e = function (s) { return esc(s); };
+    var b = d.buttons || {};
+    var lines = d.lines || [];
+    var shown = 0;
+    var next = function (label) { return '<button type="button" class="sky-btn ghost sky-next" data-skynext>' + e(label) + '</button>'; };
+    var steps = [
+      function () { return '<div class="sky-mark sky-morph"><span class="sky-a">' + logo(96) + '</span><span class="sky-b">' + NOTE_HEART + '</span></div><p class="sky-lead">' + e(d.intro) + '</p>' + next(b.first); },
+      function () { return '<div class="sky-mark">' + NOTE_HEART + '</div><h1 class="sky-h">' + e(d.reveal) + '</h1>' + next(b.second); },
+      function () {
+        return '<section class="sky-card"><span class="sky-kicker">' + e(d.kicker) + '</span><b>' + e(d.toFull) + '</b><span class="sky-dim">' + e(d.subtitle) + '</span><ul id="sky-lines"></ul></section>' + next(lines.length ? b.read : b.last);
+      },
+      function () {
+        return '<div class="sky-mark">' + NOTE_HEART + '</div><h2 class="sky-q">' + e(d.question) + '</h2>' +
+          '<div class="sky-row" id="sky-act"><button type="button" class="sky-btn" data-sky="yes">' + e(b.yes) + '</button><button type="button" class="sky-btn ghost" data-sky="think">' + e(b.think) + '</button></div>' +
+          '<p class="sky-dim">Love, ' + e(d.from) + '</p>';
+      }
+    ];
+    var at = 0;
+    var show = function () {
+      box.classList.remove('sky-fade'); void box.offsetWidth;
+      box.innerHTML = steps[at]();
+      box.classList.add('sky-fade');
+      var nb = box.querySelector('[data-skynext]');
+      if (nb) setTimeout(function () { nb.focus(); }, 50);
+    };
+    if (calmMotion()) box.classList.add('calm');
+    show();
+    box.addEventListener('click', function (ev) {
+      var nx = ev.target.closest('[data-skynext]');
+      if (nx) {
+        if (at === 2 && shown < lines.length) {
+          shown++;
+          $('#sky-lines').insertAdjacentHTML('beforeend', '<li class="sky-new">' + e(lines[shown - 1]) + '</li>');
+          nx.textContent = shown < lines.length ? b.more : b.last;
+          return;
+        }
+        at = Math.min(at + 1, steps.length - 1);
+        return show();
+      }
+      var btn = ev.target.closest('[data-sky]');
+      if (!btn) return;
+      var yes = btn.getAttribute('data-sky') === 'yes';
+      var msg = yes ? d.yes : d.think;
+      $('#sky-act').outerHTML = '<div class="sky-yay"><h2 class="sky-q">' + e(msg[0]) + '</h2><p class="sky-dim">' + e(msg[1]) + '</p></div>';
+      if (yes) { var mk = box.querySelector('.sky-mark'); if (mk) mk.classList.add('sky-beat'); skyCelebrate(); }
+    });
+  }
+
+  function skyCelebrate() {
+    if (calmMotion()) return;
+    var root = $('.sky');
+    var bits = [
+      '<svg width="26" height="26" viewBox="0 0 24 24"><g fill="#F06A8B"><circle cx="12" cy="6" r="4"/><circle cx="18" cy="12" r="4"/><circle cx="12" cy="18" r="4"/><circle cx="6" cy="12" r="4"/></g><circle cx="12" cy="12" r="3" fill="#F5C542"/></svg>',
+      '<svg width="26" height="26" viewBox="0 0 24 24"><g fill="#B05CC8"><circle cx="12" cy="6" r="4"/><circle cx="18" cy="12" r="4"/><circle cx="12" cy="18" r="4"/><circle cx="6" cy="12" r="4"/></g><circle cx="12" cy="12" r="3" fill="#FFF3C4"/></svg>',
+      '<svg width="22" height="18" viewBox="0 0 16 13"><rect x="1" y="1" width="14" height="11" rx="1.5" fill="#80BC41"/><path d="M1 4.5h14M1 8.5h14" stroke="#fff" stroke-width="1"/></svg>',
+      '<svg width="34" height="22" viewBox="0 0 46 30"><path d="M3 20c6-9 16-13 27-11 4 1 8 3 10 6l4-1-2 4c-2 3-6 4-10 4-3 0-5-1-7-1l-3 5-1-5c-6-1-12-1-18-1z" fill="#5BA8E6"/><path d="M19 9l4-6 2 7z" fill="#5BA8E6"/></svg>'
+    ];
+    for (var i = 0; i < 46; i++) {
+      var s = document.createElement('span');
+      s.className = 'sky-bit'; s.setAttribute('aria-hidden', 'true');
+      s.innerHTML = bits[i % bits.length];
+      s.style.left = (Math.random() * 100) + '%';
+      s.style.animationDelay = (Math.random() * 2.4) + 's';
+      s.style.animationDuration = (4 + Math.random() * 3) + 's';
+      s.style.setProperty('--sway', (Math.random() * 80 - 40) + 'px');
+      root.appendChild(s);
+    }
+  }
+
+  /* ---------------------------------------------------------------- */
   /* Command palette (Ctrl+K)                                         */
   /* ---------------------------------------------------------------- */
 
@@ -3461,7 +3559,9 @@
     else if (e.key === 'Enter' && e.target.id === 'pal-q') { e.preventDefault(); runPaletteItem(state.palette.index); }
   });
 
-  window.addEventListener('hashchange', renderRoute);
+  window.addEventListener('hashchange', function () {
+    tryNote().then(function (opened) { if (opened) return; if ($('.sky')) { document.title = 'Pangia | College Products'; return state.data ? renderRoute() : start(); } if (state.data) renderRoute(); });
+  });
 
   /* ---------------------------------------------------------------- */
   /* Start                                                            */
@@ -3470,6 +3570,7 @@
   function start() {
     if ($('#splash')) showSplash();
     if (!CFG.API_URL || !/^https:\/\//.test(CFG.API_URL)) { renderSetupNeeded(); return; }
+    if (noteWord() && !state.noteChecked) { state.noteChecked = true; tryNote().then(function (opened) { if (!opened) start(); }); return; }
     var saved = null;
     try { saved = sessionStorage.getItem('pangia_token'); } catch (e) { /* ignore */ }
     if (saved && tokenValid(saved)) { state.token = saved; boot(); }
