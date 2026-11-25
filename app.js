@@ -223,9 +223,10 @@
     var cells = names.map(function (n, i) {
       var dot = i === 7 ? '#80BC41' : (i === 4 || i === 11) ? '#F2B544' : 'transparent';
       var cls = 'month' + (off.indexOf(i) !== -1 ? ' off' : '') + (i === now.getMonth() ? ' now' : '');
-      return '<div class="' + cls + '"><div class="bar"><i class="dot" style="background:' + dot + '"></i></div><span>' + n + '</span></div>';
+      return '<button type="button" class="' + cls + (state.monthOpen === i ? ' open' : '') + '" data-month="' + i + '" aria-expanded="' + (state.monthOpen === i) + '"><div class="bar"><i class="dot" style="background:' + dot + '"></i></div><span>' + n + '</span></button>';
     }).join('');
-    return '<div class="months"><div class="month-row" role="img" aria-label="Season calendar, today is in ' + names[now.getMonth()] + '">' + cells + '</div>' +
+    return '<div class="months"><div class="month-row" role="group" aria-label="Season calendar, today is in ' + names[now.getMonth()] + '. Pick a month for details.">' + cells + '</div>' +
+      (state.monthOpen != null ? monthDetail(state.monthOpen) : '') +
       '<div class="legend"><span><i style="width:10px;height:10px;border-radius:3px;background:rgba(255,255,255,.28)"></i>Off season</span>' +
       '<span><i style="width:8px;height:8px;border-radius:50%;background:#80BC41"></i>Delivery</span>' +
       '<span><i style="width:8px;height:8px;border-radius:50%;background:#F2B544"></i>Collection</span>' +
@@ -612,11 +613,12 @@
     return { name: 'home', query: query };
   }
 
-  function renderRoute() {
+  function renderRoute(isRefresh) {
     if (!state.data) return;
     closePalette();
     closeModal();
     destroyMap();
+    if (state.homeMap) { try { state.homeMap.remove(); } catch (e) { /* gone */ } state.homeMap = null; }
     var route = parseRoute();
     var r = role();
     var html;
@@ -641,6 +643,11 @@
     renderShell(route, html);
     hideSplash();
     window.scrollTo(0, 0);
+    if (route.name === 'home' && (r === 'Manager' || isTeam())) {
+      if (r === 'Manager') initHomeMap();
+      if (!isRefresh) countUp($('#app'));
+      startAutoRefresh();
+    }
     if (route.name === 'school' && r !== 'School Admin') loadSchool(route.school);
     if (route.name === 'map') initMap(route.query);
     if (route.name === 'inventory') loadInventory(true).then(paintInventory).catch(function (err) { if (err.code !== 'auth_expired') { var b = $('#inv-body'); if (b) b.innerHTML = '<div class="empty">' + esc(err.message) + '</div>'; } });
@@ -713,40 +720,55 @@
     var noContract = schools.filter(function (s) { return !s.contract; }).length;
     var attention = scored.slice().sort(function (a, b) { return a.health.score - b.health.score; }).slice(0, 5);
 
+    var web7 = (d.trends || []).slice(-7).reduce(function (a, r) { return a + (r.web || 0); }, 0);
     var kpis = [
-      { label: 'Partner schools', value: schools.length, note: noContract ? noContract + ' without a contract on file' : 'All contracts on file', cls: noContract ? 'b-mute' : 'b-good' },
-      { label: 'Average health score', value: avg == null ? '-' : avg, note: avg == null ? 'No data yet' : avg >= 80 ? 'Healthy' : avg >= 50 ? 'Some schools need attention' : 'Needs attention', cls: avg == null ? 'b-mute' : avg >= 80 ? 'b-good' : avg >= 50 ? 'b-warn' : 'b-bad' },
-      { label: 'Renewals in 90 days', value: renewals.length, note: renewals.length ? 'Next in ' + renewals[0].contract.daysLeft + ' days' : 'Nothing due', cls: renewals.length ? 'b-warn' : 'b-good' },
-      { label: 'Critical stock', value: critical, note: critical ? 'Schools to restock' : 'No critical schools', cls: critical ? 'b-bad' : 'b-good' }
+      { key: 'schools', label: 'Partner schools', value: schools.length, note: noContract ? noContract + ' without a contract on file' : 'All contracts on file', cls: noContract ? 'b-mute' : 'b-good', trend: sparkline('schools') },
+      { key: 'health', label: 'Average health score', value: avg == null ? '-' : avg, note: avg == null ? 'No data yet' : avg >= 80 ? 'Healthy' : avg >= 50 ? 'Some schools need attention' : 'Needs attention', cls: avg == null ? 'b-mute' : avg >= 80 ? 'b-good' : avg >= 50 ? 'b-warn' : 'b-bad', trend: sparkline('health') },
+      { key: 'renewals', label: 'Renewals in 90 days', value: renewals.length, note: renewals.length ? 'Next in ' + renewals[0].contract.daysLeft + ' days' : 'Nothing due', cls: renewals.length ? 'b-warn' : 'b-good', trend: sparkline('renewals', true) },
+      { key: 'critical', label: 'Critical stock', value: critical, note: critical ? 'Schools to restock' : 'No critical schools', cls: critical ? 'b-bad' : 'b-good', trend: sparkline('critical', true) }
     ];
+    if ((d.trends || []).some(function (r) { return r.web != null; })) kpis.push({ key: 'web', label: 'Web orders, last 7 days', value: web7, note: 'From WooCommerce', cls: 'b-mute', trend: sparkline('web') });
+
+    var cards = {
+      todo: todoStrip(),
+      kpis: '<section class="kpis" aria-label="Summary">' + kpis.map(function (k) {
+        var num = typeof k.value === 'number';
+        return '<div class="kpi"><span class="label">' + esc(k.label) + '</span><span class="value"' + (num ? ' data-count="' + k.value + '" data-key="' + k.key + '"' : '') + '>' + esc(num ? fmtNum(k.value) : k.value) + '</span><span class="badge ' + k.cls + '" style="align-self:flex-start">' + esc(k.note) + '</span>' + k.trend + '</div>';
+      }).join('') + '</section>',
+      attention: '<section class="card" aria-labelledby="att-h"><div class="card-head"><div style="display:flex;flex-direction:column;gap:4px"><h2 id="att-h">Schools needing attention</h2><span class="hint">Lowest health scores first</span></div><a href="#/schools">See all</a></div>' +
+        (attention.length ? attention.map(function (s) {
+          return '<a class="rowlink" href="' + schoolHref(s.name) + '">' + ring(s.health.score) + '<span class="t"><b>' + esc(s.name) + '</b><span>' + esc(reasonFor(s)) + '</span></span>' + icon('chev', 16) + '</a>';
+        }).join('') : '<div class="empty">No schools found yet.</div>') + '</section>',
+      renewals: '<section class="card" aria-labelledby="ren-h"><div class="card-head"><div style="display:flex;flex-direction:column;gap:4px"><h2 id="ren-h">Renewals, next 90 days</h2><span class="hint">Reminders go out 60 and 30 days before the end date</span></div></div>' +
+        (renewals.length ? renewals.slice(0, 4).map(function (s) {
+          var end = toDate(s.contract.end);
+          var dl = s.contract.daysLeft;
+          var r60 = new Date(end.getTime() - 60 * 86400000);
+          var r30 = new Date(end.getTime() - 30 * 86400000);
+          var note = dl <= 30 ? '30-day reminder sent' : dl <= 60 ? '60-day reminder sent, next on ' + fmtDate(r30.toISOString(), { month: 'short', day: 'numeric' }) : '60-day reminder goes out ' + fmtDate(r60.toISOString(), { month: 'short', day: 'numeric' });
+          return '<a class="renewal" href="' + schoolHref(s.name) + '"><span class="cal"><small>' + esc(fmtDate(s.contract.end, { month: 'short' })) + '</small><b>' + end.getDate() + '</b></span>' +
+            '<span class="t" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px"><b style="font-size:14px">' + esc(s.name) + '</b><span class="small muted">' + esc(note) + '</span></span>' +
+            '<span class="badge ' + (dl <= 30 ? 'b-bad' : 'b-warn') + '">' + dl + ' days</span></a>';
+        }).join('') : '<div class="empty">No contracts end in the next 90 days.</div>') + '</section>',
+      map: homeMapCard(),
+      activity: '<section class="card" aria-labelledby="act-h" style="gap:4px"><div class="card-head" style="margin-bottom:10px"><h2 id="act-h">Activity</h2><span class="live"><i></i>Live</span></div>' +
+        activityList(d.activity, true) + '</section>'
+    };
+    var prefs = homePrefs();
+    var wide = { todo: true, kpis: true };
+    var html = '', grid = '';
+    prefs.order.forEach(function (k) {
+      if (prefs.hidden.indexOf(k) !== -1 || !cards[k]) return;
+      if (wide[k]) { if (grid) { html += '<div class="homegrid">' + grid + '</div>'; grid = ''; } html += cards[k]; }
+      else grid += cards[k];
+    });
+    if (grid) html += '<div class="homegrid">' + grid + '</div>';
 
     return '<header class="pagehead"><div class="titles"><span class="eyebrow">' + esc(today()) + '</span>' +
       '<h1 class="h1">' + greeting() + ', ' + esc(firstName(d.user.name)) + '</h1></div>' +
-      '<span class="small muted">Directory refreshed ' + esc(relTime(d.builtAt)) + '</span></header>' +
-      seasonHero(false) +
-      '<section class="kpis" aria-label="Summary">' + kpis.map(function (k) {
-        return '<div class="kpi"><span class="label">' + esc(k.label) + '</span><span class="value">' + esc(k.value) + '</span><span class="badge ' + k.cls + '" style="align-self:flex-start">' + esc(k.note) + '</span></div>';
-      }).join('') + '</section>' +
-      '<div class="grid-2">' +
-      '<section class="card" aria-labelledby="att-h"><div class="card-head"><div style="display:flex;flex-direction:column;gap:4px"><h2 id="att-h">Schools needing attention</h2><span class="hint">Lowest health scores first</span></div><a href="#/schools">See all</a></div>' +
-      (attention.length ? attention.map(function (s) {
-        return '<a class="rowlink" href="' + schoolHref(s.name) + '">' + ring(s.health.score) + '<span class="t"><b>' + esc(s.name) + '</b><span>' + esc(reasonFor(s)) + '</span></span>' + icon('chev', 16) + '</a>';
-      }).join('') : '<div class="empty">No schools found yet.</div>') + '</section>' +
-      '<div class="stack">' +
-      '<section class="card" aria-labelledby="ren-h"><div class="card-head"><div style="display:flex;flex-direction:column;gap:4px"><h2 id="ren-h">Renewals, next 90 days</h2><span class="hint">Reminders go out 60 and 30 days before the end date</span></div></div>' +
-      (renewals.length ? renewals.slice(0, 4).map(function (s) {
-        var end = toDate(s.contract.end);
-        var dl = s.contract.daysLeft;
-        var r60 = new Date(end.getTime() - 60 * 86400000);
-        var r30 = new Date(end.getTime() - 30 * 86400000);
-        var note = dl <= 30 ? '30-day reminder sent' : dl <= 60 ? '60-day reminder sent, next on ' + fmtDate(r30.toISOString(), { month: 'short', day: 'numeric' }) : '60-day reminder goes out ' + fmtDate(r60.toISOString(), { month: 'short', day: 'numeric' });
-        return '<a class="renewal" href="' + schoolHref(s.name) + '"><span class="cal"><small>' + esc(fmtDate(s.contract.end, { month: 'short' })) + '</small><b>' + end.getDate() + '</b></span>' +
-          '<span class="t" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px"><b style="font-size:14px">' + esc(s.name) + '</b><span class="small muted">' + esc(note) + '</span></span>' +
-          '<span class="badge ' + (dl <= 30 ? 'b-bad' : 'b-warn') + '">' + dl + ' days</span></a>';
-      }).join('') : '<div class="empty">No contracts end in the next 90 days.</div>') + '</section>' +
-      '<section class="card" aria-labelledby="act-h" style="gap:4px"><div class="card-head" style="margin-bottom:10px"><h2 id="act-h">Activity</h2><span class="live"><i></i>Live</span></div>' +
-      activityList(d.activity, true) + '</section>' +
-      '</div></div>';
+      '<div class="row" style="gap:12px"><span class="small muted" id="home-updated">Directory refreshed ' + esc(relTime(d.builtAt)) + '</span>' +
+      '<button type="button" class="btn sm" data-action="customize-home">' + icon('pencil', 14, 2) + 'Customize</button></div></header>' +
+      seasonHero(false) + html;
   }
 
   /* ---------------------------------------------------------------- */
@@ -912,7 +934,7 @@
       '<section class="card span-all" style="gap:6px"><div class="card-head" style="margin-bottom:8px"><h2>Change history</h2><span class="hint">Every save is kept</span></div><div id="history">' + historyList(res.history) + '</div></section>' : '';
 
     var contractsCard = docs ? contractRecords(s.name, res, mgr) : '';
-    body.innerHTML = '<div class="grid">' + (s.health ? health : '') + contract + stock + contactsCard(s.name, res.contacts || [], res.contactHistory) + storageCard(s.name, res.storage, res.storageHistory) + contractsCard + (can('logs') || role() === 'Campus Manager' ? logs : '') + profileCard(res.profile) + schoolAssetsCard(res.profile) + billingCard(res.billing, s.name) + (can('inventory') ? inventoryCard(res.inventory, s.name) : '') + people + activity + reg + editor + '</div>';
+    body.innerHTML = '<div class="grid">' + (s.health ? health : '') + contract + stock + contactsCard(s.name, res.contacts || [], res.contactHistory) + storageCard(s.name, res.storage, res.storageHistory) + contractsCard + (can('logs') || role() === 'Campus Manager' ? logs : '') + profileCard(res.profile) + schoolAssetsCard(res.profile) + marketingKitCard(s.name) + billingCard(res.billing, s.name) + (can('inventory') ? inventoryCard(res.inventory, s.name) : '') + people + activity + reg + editor + '</div>';
   }
 
   function contractRecords(schoolName, res, editable) {
@@ -1435,6 +1457,7 @@
       can('finance') ? ['#/finance', 'dollar', 'Invoices and tax', 'Finance'] : null
     ].filter(Boolean);
     return '<header class="pagehead"><div class="titles"><span class="eyebrow">' + esc(today()) + ' · ' + esc(r) + '</span><h1 class="h1">' + greeting() + ', ' + esc(firstName(d.user.name)) + '</h1><p class="sub">' + esc(TEAM_INFO[r] || '') + '</p></div></header>' +
+      todoStrip() +
       '<section class="kpis" aria-label="Summary">' + kpis + '</section>' +
       '<div class="tiles">' + tiles.map(function (t) { return '<a class="tile" href="' + t[0] + '"><span class="ic">' + icon(t[1], 20) + '</span><span style="display:flex;flex-direction:column;gap:4px"><b>' + t[2] + '</b><small>' + esc(t[3]) + '</small></span></a>'; }).join('') + '</div>' +
       '<div class="grid-2">' + main + '</div>' +
@@ -1766,7 +1789,7 @@
   /* ---------------------------------------------------------------- */
 
   var FORMAT_COLORS = { PDF: '#C2410C', DOCX: '#1D5FBF', DOC: '#1D5FBF', XLSX: '#1E7B45', XLS: '#1E7B45', PPTX: '#C04A1A', GDOC: '#1D5FBF', GSHEET: '#1E7B45', GSLIDES: '#B7791F', CANVA: '#7C3AED', PNG: '#0E7490', JPG: '#0E7490', SVG: '#0E7490', FOLDER: '#5B6B7C', LINK: '#5B6B7C' };
-  var CATEGORY_ICON = { 'Spec sheet': 'file', 'SOP': 'cm', 'Poster': 'layers', 'Rack card': 'layers', 'Email': 'mail', 'Social': 'users', 'Logo': 'spark', 'Presentation': 'layers', 'Template': 'pencil', 'Training': 'school', 'Other': 'file' };
+  var CATEGORY_ICON = { 'Spec sheet': 'file', 'SOP': 'cm', 'Marketing kit': 'spark', 'Poster': 'layers', 'Rack card': 'layers', 'Email': 'mail', 'Social': 'users', 'Logo': 'spark', 'Presentation': 'layers', 'Template': 'pencil', 'Training': 'school', 'Other': 'file' };
 
   function assetList() { return (state.data.assets || []); }
 
@@ -1855,6 +1878,27 @@
       if (size && type) keys.push(size + type);
     });
     return keys;
+  }
+
+  // The school's partner marketing kit (social, emails, website), if one is in the Asset Library.
+  function marketingKitCard(schoolName) {
+    if (!can('assets')) return '';
+    var key = schoolKey(schoolName);
+    var kits = assetList().filter(function (x) {
+      return x.status !== 'Archived' && x.category === 'Marketing kit' && String(x.tags || '').split(',').some(function (t) { return schoolKey(t.replace(/^\s*school:/i, '')) === key; });
+    });
+    if (!kits.length) return '';
+    var k = kits[kits.length - 1];
+    var u = safeUrl(k.url);
+    if (!u) return '';
+    var part = function (folder, label, note) {
+      return '<a class="plink" href="' + esc(u.replace(/\/$/, '') + '/' + encodeURIComponent(folder)) + '" target="_blank" rel="noopener">' + icon('ext', 15, 2) + '<span><b>' + label + '</b> <span class="muted small">' + note + '</span></span></a>';
+    };
+    return '<section class="card" aria-labelledby="mk-h"><div class="card-head"><h2 id="mk-h">Marketing kit</h2><a href="' + esc(u) + '" target="_blank" rel="noopener">Open kit</a></div>' +
+      '<p class="small muted" style="margin:0">' + esc(k.title) + '</p>' +
+      part('01_Social', 'Social posts', '4 posts, 6 sizes, collab and CP only') +
+      part('02_Emails', 'School emails', '4 emails, HTML and PNG') +
+      part('03_Website_Placement', 'Website placement', 'Blurbs, snippets, banners') + '</section>';
   }
 
   function schoolAssetsCard(profile) {
@@ -2644,6 +2688,172 @@
   }
 
   /* ---------------------------------------------------------------- */
+  /* Dynamic home: to-do strip, sparklines, count-up, auto refresh,   */
+  /* clickable season timeline, mini map and home customization       */
+  /* ---------------------------------------------------------------- */
+
+  function todoStrip() {
+    var t = state.data.todo;
+    if (!t) return '';
+    if (!t.length) return '<section class="todo calm" aria-label="Today"><span class="todo-h">' + icon('check', 16, 2.2) + 'Today</span><span class="muted small">Nothing needs you right now. Nice.</span></section>';
+    return '<section class="todo" aria-label="Today"><span class="todo-h">' + icon('spark', 16, 2.2) + 'Today</span>' + t.map(function (x) {
+      return '<a class="todo-item t-' + esc(x.tone) + '" href="' + esc(x.href) + '"><b data-count="' + x.count + '">' + fmtNum(x.count) + '</b><span>' + esc(x.label) + '</span>' + icon('chev', 14, 2) + '</a>';
+    }).join('') + '</section>';
+  }
+
+  // A tiny 30-day trend line from Daily Stats. Up is good unless "lowerIsBetter".
+  function sparkline(field, lowerIsBetter) {
+    var pts = (state.data.trends || []).filter(function (r) { return r[field] != null; });
+    if (pts.length < 2) return '<span class="spark-note">Trend line starts filling in tomorrow</span>';
+    var vals = pts.map(function (r) { return r[field]; });
+    var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals), w = 120, h = 30;
+    var span = max - min || 1;
+    var xy = vals.map(function (v, i) { return [Math.round(i / (vals.length - 1) * w * 10) / 10, Math.round((h - 3 - (v - min) / span * (h - 6)) * 10) / 10]; });
+    var first = vals[0], last = vals[vals.length - 1], diff = last - first;
+    var good = diff === 0 ? null : (diff > 0) !== !!lowerIsBetter;
+    var color = good == null ? 'var(--muted)' : good ? '#3F8F2E' : '#C2410C';
+    var line = xy.map(function (p) { return p.join(','); }).join(' ');
+    return '<span class="spark" title="' + esc(pts[0].d + ' to ' + pts[pts.length - 1].d) + '"><svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" aria-hidden="true">' +
+      '<polyline points="0,' + h + ' ' + line + ' ' + w + ',' + h + '" fill="' + color + '" opacity=".1"/>' +
+      '<polyline points="' + line + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<circle cx="' + xy[xy.length - 1][0] + '" cy="' + xy[xy.length - 1][1] + '" r="2.6" fill="' + color + '"/></svg>' +
+      '<small style="color:' + color + '">' + (diff === 0 ? 'No change' : (diff > 0 ? '+' : '') + fmtNum(Math.round(diff)) + ' in ' + (pts.length - 1) + ' days') + '</small></span>';
+  }
+
+  // Numbers marked data-count count up from 0 (or from their old value on refresh).
+  function countUp(root, from) {
+    if (calmMotion()) return;
+    (root || document).querySelectorAll('[data-count]').forEach(function (el) {
+      var to = Number(el.getAttribute('data-count'));
+      if (!isFinite(to)) return;
+      var start = from && from[el.getAttribute('data-key') || ''] != null ? from[el.getAttribute('data-key')] : 0;
+      if (start === to) return;
+      var t0 = performance.now(), dur = 700;
+      var step = function (t) {
+        var k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+        el.textContent = fmtNum(Math.round(start + (to - start) * e));
+        if (k < 1) requestAnimationFrame(step);
+      };
+      el.textContent = fmtNum(start);
+      requestAnimationFrame(step);
+    });
+  }
+
+  // Refresh the data every 5 minutes while the home page is open and nobody is mid-task.
+  var autoTimer = null;
+  function startAutoRefresh() {
+    clearInterval(autoTimer);
+    autoTimer = setInterval(function () {
+      var rt = parseRoute();
+      if (!state.data || rt.name !== 'home' || state.modal || state.palette.open || document.hidden) return;
+      var before = {};
+      document.querySelectorAll('[data-count][data-key]').forEach(function (el) { before[el.getAttribute('data-key')] = Number(el.getAttribute('data-count')); });
+      api('bootstrap').then(function (data) {
+        if (parseRoute().name !== 'home' || state.modal || state.palette.open) return;
+        var y = window.scrollY;
+        state.data = data;
+        renderRoute(true);
+        window.scrollTo(0, y);
+        countUp(document, before);
+        var note = $('#home-updated'); if (note) note.textContent = 'Updated just now';
+      }).catch(function () { /* try again next time */ });
+    }, 5 * 60 * 1000);
+  }
+
+  // Season timeline: what happens in each month.
+  var MONTH_NOTES = [
+    'Spring term is starting. Lock in renewals and restock before spring orders open.',
+    'Spring term. Stay on top of CM tasks.',
+    'Spring term. Line up renewals before the May collection.',
+    'Spring term. Spring collection prep: get Collection Logs ready.',
+    'Spring collection. The big pickup of the year.',
+    'Pre-season. Restock low schools and check contracts.',
+    'Pre-season. Early bird ends July 31. Deliveries start next month.',
+    'Delivery season. Move-in deliveries are underway.',
+    'Fall term. Campuses are settled in.',
+    'Off season. Renewals and restocking.',
+    'Off season. Fall collection is next month.',
+    'Fall collection. Fall rentals are picked up.'
+  ];
+  function monthDetail(i) {
+    var names = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    var now = new Date();
+    var year = i < now.getMonth() ? now.getFullYear() + 1 : now.getFullYear();
+    var ends = state.data.schools.filter(function (s) {
+      if (!s.contract || !s.contract.end) return false;
+      var e = toDate(s.contract.end);
+      return e.getMonth() === i && e.getFullYear() === year;
+    });
+    return '<div class="mdetail" role="region" aria-live="polite"><div class="row" style="justify-content:space-between"><b>' + names[i] + ' ' + year + '</b><button type="button" class="copybtn light" data-action="month-close" aria-label="Close">' + icon('x', 14, 2) + '</button></div>' +
+      '<span>' + esc(MONTH_NOTES[i]) + '</span>' +
+      (ends.length ? '<span class="mlist"><b>' + ends.length + ' contract' + (ends.length === 1 ? '' : 's') + ' end:</b> ' + ends.slice(0, 6).map(function (s) { return '<a href="' + schoolHref(s.name) + '">' + esc(s.name) + '</a>'; }).join(', ') + (ends.length > 6 ? ' and ' + (ends.length - 6) + ' more' : '') + '</span>' : '<span class="mlist muted">No contracts end this month.</span>') + '</div>';
+  }
+
+  // Mini map on the home page: school pins colored by stock status.
+  var HOME_PIN = { Critical: '#C2410C', Low: '#E0A42A', Healthy: '#3F8F2E', Check: '#8A94A6' };
+  function homeMapCard() {
+    if (!can('map') || !(state.data.locations || []).length) return '';
+    return '<section class="card" aria-labelledby="hm-h" data-home="map"><div class="card-head"><h2 id="hm-h">Map</h2><a href="#/map">Open the map</a></div>' +
+      '<div id="home-map" class="home-map" role="img" aria-label="Map of partner schools colored by stock status"></div>' +
+      '<div class="row small muted" style="gap:12px">' + [['Critical', HOME_PIN.Critical], ['Low', HOME_PIN.Low], ['Healthy', HOME_PIN.Healthy], ['No rental stock', '#1F6FB5']].map(function (k) { return '<span class="row" style="gap:5px"><i class="dot" style="width:8px;height:8px;border-radius:50%;background:' + k[1] + '"></i>' + k[0] + '</span>'; }).join('') + '</div></section>';
+  }
+  function initHomeMap() {
+    var el = $('#home-map');
+    if (!el) return;
+    loadLeaflet().then(function (L) {
+      L = L || window.L;
+      if (!$('#home-map') || !L) return;
+      if (state.homeMap) { try { state.homeMap.remove(); } catch (e) { /* gone */ } }
+      var m = L.map('home-map', { zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false, touchZoom: false });
+      state.homeMap = m;
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, className: 'pangia-tiles' }).addTo(m);
+      var byName = {};
+      state.data.schools.forEach(function (s) { byName[norm(s.name)] = s; });
+      var pts = [];
+      state.data.locations.forEach(function (l) {
+        if (l.lat == null || l.lng == null) return;
+        var s = byName[norm(l.school)];
+        var c = HOME_PIN[s && s.stockStatus] || '#1F6FB5';
+        L.circleMarker([l.lat, l.lng], { radius: s && s.stockStatus === 'Critical' ? 6 : 4.5, color: '#fff', weight: 1.5, fillColor: c, fillOpacity: .95 }).addTo(m);
+        pts.push([l.lat, l.lng]);
+      });
+      if (pts.length) m.fitBounds(pts, { padding: [14, 14] }); else m.setView([39.5, -96], 3);
+      el.addEventListener('click', function () { location.hash = '#/map'; });
+    }).catch(function () { el.innerHTML = '<div class="empty">The map could not load.</div>'; });
+  }
+
+  // Each person can hide or reorder the home cards. Saved in this browser.
+  var HOME_CARDS = [['todo', 'Today'], ['kpis', 'Summary numbers'], ['attention', 'Schools needing attention'], ['renewals', 'Renewals'], ['map', 'Map'], ['activity', 'Activity']];
+  function homePrefs() {
+    var p = null;
+    try { p = JSON.parse(localStorage.getItem('pangia_home_' + state.data.user.email) || 'null'); } catch (e) { p = null; }
+    var order = (p && p.order || []).filter(function (k) { return HOME_CARDS.some(function (c) { return c[0] === k; }); });
+    HOME_CARDS.forEach(function (c) { if (order.indexOf(c[0]) === -1) order.push(c[0]); });
+    return { order: order, hidden: (p && p.hidden) || [] };
+  }
+  function saveHomePrefs(p) { try { localStorage.setItem('pangia_home_' + state.data.user.email, JSON.stringify(p)); } catch (e) { /* private mode */ } }
+
+  function openCustomizeHome() {
+    var p = homePrefs();
+    var label = {}; HOME_CARDS.forEach(function (c) { label[c[0]] = c[1]; });
+    state.modal = true;
+    $('#palette-root').innerHTML = '<div class="overlay" data-action="modal-bg"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="ch-h">' +
+      '<div class="card-head"><h2 id="ch-h" style="font-family:var(--display);font-size:20px;font-weight:800">Customize my home</h2><button type="button" class="copybtn" data-action="close-modal" aria-label="Close">' + icon('x', 18, 2) + '</button></div>' +
+      '<p class="small muted" style="margin:0">Show, hide and reorder your home cards. This is saved in this browser only.</p>' +
+      '<div class="stack" id="home-cards" style="gap:8px">' + p.order.map(function (k, i) {
+        return '<div class="homecard-row" data-k="' + k + '"><label class="row" style="gap:10px;flex:1"><input type="checkbox"' + (p.hidden.indexOf(k) === -1 ? ' checked' : '') + '> <b>' + esc(label[k]) + '</b></label>' +
+          '<button type="button" class="copybtn" data-action="home-up" aria-label="Move up"' + (i === 0 ? ' disabled' : '') + '>' + icon('chev', 15, 2).replace('<svg', '<svg style="transform:rotate(-90deg)"') + '</button>' +
+          '<button type="button" class="copybtn" data-action="home-down" aria-label="Move down"' + (i === p.order.length - 1 ? ' disabled' : '') + '>' + icon('chev', 15, 2).replace('<svg', '<svg style="transform:rotate(90deg)"') + '</button></div>';
+      }).join('') + '</div>' +
+      '<div class="formfoot" style="border:0;padding:0"><button type="button" class="btn sm" data-action="home-reset">Reset</button><button type="button" class="btn primary" data-action="home-save">Save</button></div></div></div>';
+  }
+  function readCustomizeHome() {
+    var order = [], hidden = [];
+    document.querySelectorAll('#home-cards .homecard-row').forEach(function (r) { var k = r.getAttribute('data-k'); order.push(k); if (!r.querySelector('input').checked) hidden.push(k); });
+    return { order: order, hidden: hidden };
+  }
+
+  /* ---------------------------------------------------------------- */
   /* Command palette (Ctrl+K)                                         */
   /* ---------------------------------------------------------------- */
 
@@ -2834,6 +3044,17 @@
       }).catch(function (err) { el.disabled = false; el.textContent = 'Prepare'; if (err.code !== 'auth_expired') toast(err.message, true); });
     }
     if (name === 'edit-terms' && el) return openTermsModal(el.getAttribute('data-key'));
+    if (name === 'customize-home') return openCustomizeHome();
+    if ((name === 'home-up' || name === 'home-down') && el) {
+      var hr = el.closest('.homecard-row'), sib = name === 'home-up' ? hr.previousElementSibling : hr.nextElementSibling;
+      if (sib) { if (name === 'home-up') hr.parentNode.insertBefore(hr, sib); else hr.parentNode.insertBefore(sib, hr); }
+      var rows2 = document.querySelectorAll('#home-cards .homecard-row');
+      rows2.forEach(function (r2, i2) { r2.querySelector('[data-action="home-up"]').disabled = i2 === 0; r2.querySelector('[data-action="home-down"]').disabled = i2 === rows2.length - 1; });
+      return;
+    }
+    if (name === 'home-save') { saveHomePrefs(readCustomizeHome()); closeModal(); renderRoute(); toast('Home updated'); return; }
+    if (name === 'home-reset') { try { localStorage.removeItem('pangia_home_' + state.data.user.email); } catch (e) { /* ignore */ } closeModal(); renderRoute(); toast('Home reset'); return; }
+    if (name === 'month-close') { state.monthOpen = null; return renderRoute(true); }
     if (name === 'log-shipment') {
       var sch = el && el.getAttribute('data-school');
       return loadInventory().then(function () { openShipmentModal(null, sch ? { type: 'Shipment', to: 'school:' + sch } : null); }).catch(function (err) { if (err.code !== 'auth_expired') toast(err.message, true); });
@@ -2941,6 +3162,8 @@
     }
     var tk = e.target.closest('[data-taxkind]');
     if (tk) { state.taxKind = tk.getAttribute('data-taxkind'); state.taxPeriod = ''; state.tax = null; return paintFinance(); }
+    var mo = e.target.closest('[data-month]');
+    if (mo) { var mi = Number(mo.getAttribute('data-month')); state.monthOpen = state.monthOpen === mi ? null : mi; var yy = window.scrollY; renderRoute(true); window.scrollTo(0, yy); return; }
     var itb = e.target.closest('[data-invtab]');
     if (itb) { state.invTab = itb.getAttribute('data-invtab'); return paintInventory(); }
     var ikd = e.target.closest('[data-invkind]');
