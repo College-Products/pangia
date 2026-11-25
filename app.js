@@ -337,6 +337,66 @@
     closePalette();
     renderSignIn();
     toast('So long, and thanks for all the fish.');
+    dolphinLeap();
+  }
+
+  // A Babel fish swims past the search box when someone searches in Spanish.
+  var babelShown = 0;
+  function babelFish(q) {
+    if (calmMotion() || Date.now() - babelShown < 20000) return;
+    if (!/[\u00f1\u00bf\u00a1]|\b(hola|escuela|universidad|buscar|d[o\u00f3]nde|gracias|contrato|almac[e\u00e9]n)\b/i.test(q)) return;
+    var box = $('.palette');
+    if (!box) return;
+    babelShown = Date.now();
+    var f = document.createElement('div');
+    f.className = 'babel';
+    f.setAttribute('aria-hidden', 'true');
+    f.title = 'Babel fish';
+    f.innerHTML = '<svg width="30" height="16" viewBox="0 0 30 16"><path d="M2 8c4-6 12-7 18-3l6-4-1 7 1 7-6-4C14 15 6 14 2 8z" fill="#F5C542"/><circle cx="7" cy="7" r="1.1" fill="#054D80"/><path d="M12 5c1 2 1 4 0 6" stroke="#E0A42A" stroke-width="1" fill="none"/></svg>';
+    box.appendChild(f);
+    toast('A Babel fish swam by. Pangia still only speaks English, sorry.');
+    setTimeout(function () { f.remove(); }, 2600);
+  }
+
+  function viewLost() {
+    return '<section class="lost"><div class="petunias" aria-hidden="true"><svg width="120" height="120" viewBox="0 0 120 120">' +
+      '<path d="M34 70h52l-6 30a6 6 0 0 1-6 5H46a6 6 0 0 1-6-5z" fill="#C8723C"/><rect x="30" y="64" width="60" height="9" rx="3" fill="#A85A2C"/>' +
+      '<path d="M60 64V44M48 64l-6-14M72 64l6-14" stroke="#5FA02E" stroke-width="3" stroke-linecap="round"/>' +
+      '<g fill="#B05CC8"><circle cx="60" cy="38" r="8"/><circle cx="40" cy="46" r="7"/><circle cx="80" cy="46" r="7"/></g>' +
+      '<g fill="#F5E6FA"><circle cx="60" cy="38" r="2.6"/><circle cx="40" cy="46" r="2.3"/><circle cx="80" cy="46" r="2.3"/></g></svg></div>' +
+      '<h1 class="h1" style="margin:0">Oh no, not again.</h1><p class="sub" style="margin:0">This page doesn\'t exist. The link may be old or mistyped.</p>' +
+      '<a class="btn primary" href="#/">Back to home</a></section>';
+  }
+
+  function calmMotion() { return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+
+  // A tiny dolphin leaps across the bottom of the screen once.
+  function dolphinLeap() {
+    if (calmMotion()) return;
+    var d = document.createElement('div');
+    d.className = 'dolphin';
+    d.setAttribute('aria-hidden', 'true');
+    d.innerHTML = '<svg width="46" height="30" viewBox="0 0 46 30"><path d="M3 20c6-9 16-13 27-11 4 1 8 3 10 6l4-1-2 4c-2 3-6 4-10 4-3 0-5-1-7-1l-3 5-1-5c-6-1-12-1-18-1z" fill="#1F6FB5"/><path d="M19 9l4-6 2 7z" fill="#1F6FB5"/><circle cx="36.5" cy="14.5" r="1.1" fill="#fff"/><path d="M8 21c7 1 14 2 22 1" stroke="#9CC9EE" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>';
+    document.body.appendChild(d);
+    setTimeout(function () { d.remove(); }, 3200);
+  }
+
+  // A few tiny stars burst out around an element.
+  function starBurst(el) {
+    if (calmMotion() || !el) return;
+    var r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    for (var i = 0; i < 8; i++) {
+      var s = document.createElement('span');
+      var a = i / 8 * Math.PI * 2 + Math.random() * .4, dist = 26 + Math.random() * 18;
+      s.className = 'star42';
+      s.setAttribute('aria-hidden', 'true');
+      s.textContent = i % 3 ? '\u2726' : '\u2727';
+      s.style.left = cx + 'px'; s.style.top = cy + 'px';
+      s.style.setProperty('--dx', Math.cos(a) * dist + 'px'); s.style.setProperty('--dy', Math.sin(a) * dist + 'px');
+      s.style.color = i % 2 ? '#80BC41' : '#F5C542';
+      document.body.appendChild(s);
+      (function (n) { setTimeout(function () { n.remove(); }, 1000); })(s);
+    }
   }
 
   /* ---------------------------------------------------------------- */
@@ -539,6 +599,7 @@
       h = h.slice(0, qIndex);
     }
     var parts = h.split('/');
+    if (parts[0] && ['school', 'logs', 'schools', 'contracts', 'contacts', 'map', 'assets', 'finance', 'inventory'].indexOf(parts[0]) === -1) return { name: 'lost', query: query };
     if (parts[0] === 'school' && parts[1]) return { name: 'school', school: decodeURIComponent(parts.slice(1).join('/')), query: query };
     if (parts[0] === 'logs' && LOG_NAMES[parts[1]]) return { name: 'logs', type: parts[1], query: query };
     if (parts[0] === 'schools' && can('directory')) return { name: 'schools', query: query };
@@ -572,6 +633,7 @@
     else if (route.name === 'assets') html = viewAssets(route.query);
     else if (route.name === 'finance') html = viewFinance(route.query);
     else if (route.name === 'inventory') html = viewInventory(route.query);
+    else if (route.name === 'lost') html = viewLost();
     else if (r === 'Manager') html = viewManagerHome();
     else if (isTeam()) html = viewTeamHome();
     else if (r === 'Campus Manager') html = viewCampusHome();
@@ -2690,6 +2752,7 @@
       });
     });
     if (!flat.length) html = '<div class="empty" style="margin:16px">Nothing here. Space is big. Really big. Try a school name or a log.</div>';
+    if (/\b(drinks?|cocktails?|beers?|gargle|blaster|happy hour)\b/.test(q)) html = '<div class="egg">Pan Galactic Gargle Blaster? Maybe just water. It\'s a workday.</div>' + (flat.length ? html : '');
     if (/^(42|forty[ -]?two|(the )?meaning of life|(the )?answer to (life|everything).*|life,? the universe,? and everything)$/.test(q)) html = '<div class="egg">42. Now what was the question?</div>' + (flat.length ? html : '');
     state.palette.items = flat;
     if (state.palette.index >= flat.length) state.palette.index = Math.max(0, flat.length - 1);
@@ -2863,6 +2926,7 @@
       if (logoClicks.length >= 7) {
         logoClicks = [];
         brandMark.classList.remove('spin42'); void brandMark.getBoundingClientRect(); brandMark.classList.add('spin42');
+        starBurst(brandMark);
         toast('Mostly harmless.');
       }
     }
@@ -2949,6 +3013,7 @@
       state.palette.query = e.target.value;
       state.palette.index = 0;
       paintPalette();
+      babelFish(e.target.value);
     }
   });
 

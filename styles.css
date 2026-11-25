@@ -528,3 +528,28 @@ tr.totrow td { background: var(--surface2); font-weight: 600; }
 .spin42 { animation: spin42 1s cubic-bezier(.4, 0, .2, 1); }
 @keyframes spin42 { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spin42 { animation: none; } }
+.dolphin { position: fixed; left: -60px; bottom: 24px; z-index: 60; pointer-events: none; animation: leap 3s cubic-bezier(.45, 0, .55, 1) forwards; }
+@keyframes leap {
+  0% { transform: translate(0, 0) rotate(-18deg); }
+  50% { transform: translate(50vw, -90px) rotate(0deg); }
+  100% { transform: translate(calc(100vw + 120px), 0) rotate(22deg); }
+}
+.star42 { position: fixed; z-index: 70; pointer-events: none; font-size: 13px; line-height: 1; transform: translate(-50%, -50%); animation: star42 .9s ease-out forwards; }
+@keyframes star42 {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(.4); }
+  25% { opacity: 1; }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1.1) rotate(90deg); }
+}
+.palette { position: relative; overflow: hidden; }
+.babel { position: absolute; top: 22px; left: -40px; z-index: 5; pointer-events: none; animation: babel 2.4s ease-in-out forwards; }
+@keyframes babel {
+  0% { transform: translateX(0) translateY(0); }
+  25% { transform: translateX(25vw) translateY(-4px); }
+  50% { transform: translateX(50vw) translateY(4px); }
+  100% { transform: translateX(calc(100vw)) translateY(0); }
+}
+.lost { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 14px; padding: 80px 20px; }
+.petunias { animation: petunias 1.2s cubic-bezier(.5, 0, .75, 0) both, wobble .5s 1.2s ease-out; }
+@keyframes petunias { from { transform: translateY(-220px) rotate(-14deg); opacity: 0; } 30% { opacity: 1; } to { transform: translateY(0) rotate(0); } }
+@keyframes wobble { 30% { transform: rotate(-6deg); } 60% { transform: rotate(4deg); } 100% { transform: rotate(0); } }
+@media (prefers-reduced-motion: reduce) { .petunias, .babel { animation: none; } .babel { display: none; } }
